@@ -71,9 +71,10 @@ async function syncDriveFiles(folderId, downloadDir, logFn = console.log) {
         const authClient = await authenticate();
         const drive = google.drive({ version: 'v3', auth: authClient });
 
+        // Updated query to include JSON files
         const res = await drive.files.list({
-            q: `'${folderId}' in parents and mimeType = 'application/pdf' and trashed = false`,
-            fields: 'files(id, name, modifiedTime)',
+            q: `'${folderId}' in parents and (mimeType = 'application/pdf' or mimeType = 'application/json') and trashed = false`,
+            fields: 'files(id, name, modifiedTime, mimeType)',
         });
 
         const files = res.data.files;
@@ -86,6 +87,8 @@ async function syncDriveFiles(folderId, downloadDir, logFn = console.log) {
         let newFilesCount = 0;
 
         for (const file of files) {
+            // Check if we need to download (if not downloaded or if modified on Drive)
+            // For simplicity, we just check if ID is in record. 
             if (!downloaded[file.id]) {
                 logFn(`Drive Sync: Downloading ${file.name}...`);
                 const destPath = path.join(downloadDir, file.name);
@@ -131,9 +134,9 @@ async function uploadSummaryToDrive(folderId, originalFileName, analysisText, lo
         const authClient = await authenticate();
         const drive = google.drive({ version: 'v3', auth: authClient });
 
-        // Create filename with "notebook özet" suffix
+        // Create filename with "_notebook_summary" suffix
         const baseName = path.basename(originalFileName, path.extname(originalFileName));
-        const summaryFileName = `${baseName} notebook özet.txt`;
+        const summaryFileName = `${baseName}_notebook_summary.txt`;
 
         const fileMetadata = {
             name: summaryFileName,
@@ -160,4 +163,72 @@ async function uploadSummaryToDrive(folderId, originalFileName, analysisText, lo
     }
 }
 
-module.exports = { syncDriveFiles, uploadSummaryToDrive };
+async function uploadFileToDrive(folderId, filePath, mimeType = 'application/json', logFn = console.log) {
+    if (!folderId) throw new Error('Drive Folder ID not provided');
+
+    const fileName = path.basename(filePath);
+    logFn(`Uploading ${fileName} to Drive...`);
+
+    try {
+        const authClient = await authenticate();
+        const drive = google.drive({ version: 'v3', auth: authClient });
+
+        const fileMetadata = {
+            name: fileName,
+            parents: [folderId]
+        };
+
+        const media = {
+            mimeType: mimeType,
+            body: fs.createReadStream(filePath)
+        };
+
+        const response = await drive.files.create({
+            requestBody: fileMetadata,
+            media: media,
+            fields: 'id, name'
+        });
+
+        logFn(`Successfully uploaded: ${response.data.name} (ID: ${response.data.id})`);
+        return response.data;
+    } catch (error) {
+        logFn(`Error uploading file: ${error.message}`);
+        throw error;
+    }
+}
+
+async function deleteFileFromDrive(folderId, fileName, logFn = console.log) {
+    if (!folderId) throw new Error('Drive Folder ID not provided');
+
+    logFn(`Attempting to delete ${fileName} from Drive...`);
+
+    try {
+        const authClient = await authenticate();
+        const drive = google.drive({ version: 'v3', auth: authClient });
+
+        // Find file by name
+        const res = await drive.files.list({
+            q: `'${folderId}' in parents and name = '${fileName}' and trashed = false`,
+            fields: 'files(id, name)',
+        });
+
+        const files = res.data.files;
+        if (!files || files.length === 0) {
+            logFn(`File ${fileName} not found in Drive.`);
+            return false;
+        }
+
+        // Delete all matches (though usually should be one)
+        for (const file of files) {
+            await drive.files.delete({ fileId: file.id });
+            logFn(`Deleted ${fileName} (ID: ${file.id}) from Drive.`);
+        }
+        return true;
+
+    } catch (error) {
+        logFn(`Error deleting file from Drive: ${error.message}`);
+        throw error;
+    }
+}
+
+module.exports = { syncDriveFiles, uploadSummaryToDrive, uploadFileToDrive, deleteFileFromDrive };

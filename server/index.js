@@ -29,7 +29,7 @@ if (!fs.existsSync(DATA_DIR)) {
 // Store processed data in memory
 let processedFiles = {};
 
-const { syncDriveFiles, uploadSummaryToDrive } = require('./driveSync');
+const { syncDriveFiles, uploadSummaryToDrive, uploadFileToDrive, deleteFileFromDrive } = require('./driveSync');
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'API_KEY_MISSING');
@@ -43,15 +43,35 @@ app.get('/api/results', (req, res) => {
     res.json(Object.values(processedFiles));
 });
 
-// API to delete a processed file from memory
-app.delete('/api/results/:filename', (req, res) => {
+// API to delete a processed file
+app.delete('/api/results/:filename', async (req, res) => {
     const filename = req.params.filename;
-    if (processedFiles[filename]) {
-        delete processedFiles[filename];
-        console.log(`Deleted ${filename} from memory`);
+
+    try {
+        // 1. Remove from memory
+        if (processedFiles[filename]) {
+            delete processedFiles[filename];
+        }
+
+        // 2. Remove local files
+        const pdfPath = path.join(DATA_DIR, filename);
+        const jsonPath = path.join(DATA_DIR, `${filename}.json`);
+
+        if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);
+        if (fs.existsSync(jsonPath)) fs.unlinkSync(jsonPath);
+
+        // 3. Remove from Drive (both PDF and JSON analysis)
+        const driveFolderId = process.env.DRIVE_FOLDER_ID;
+        if (driveFolderId) {
+            await deleteFileFromDrive(driveFolderId, filename, log);
+            await deleteFileFromDrive(driveFolderId, `${filename}.json`, log);
+        }
+
+        log(`Deleted ${filename} and its analysis.`);
         res.json({ success: true, message: `${filename} deleted` });
-    } else {
-        res.status(404).json({ success: false, message: 'File not found' });
+    } catch (error) {
+        console.error(`Error deleting ${filename}:`, error);
+        res.status(500).json({ success: false, message: 'Error deleting file: ' + error.message });
     }
 });
 
@@ -168,6 +188,20 @@ app.post('/api/save-to-drive', async (req, res) => {
 // Function to process PDF
 async function processPDF(filePath) {
     const fileName = path.basename(filePath);
+    const jsonPath = filePath + '.json'; // e.g. document.pdf.json
+
+    // 1. Check for local JSON cache (Persistence Layer)
+    if (fs.existsSync(jsonPath)) {
+        try {
+            const cachedData = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+            processedFiles[fileName] = cachedData;
+            log(`Loaded analysis from cache for ${fileName}`);
+            return;
+        } catch (err) {
+            console.error(`Error reading cache for ${fileName}, re-processing:`, err);
+        }
+    }
+
     log(`Processing ${fileName}...`);
 
     try {
@@ -204,12 +238,29 @@ ${text.substring(0, 20000)}
             analysis = "API Key missing. Please add GEMINI_API_KEY to .env file.";
         }
 
-        processedFiles[fileName] = {
+        const resultData = {
             name: fileName,
             timestamp: new Date(),
             textPreview: text.substring(0, 200) + "...",
             analysis: analysis
         };
+
+        processedFiles[fileName] = resultData;
+
+        // 2. Save to local JSON cache
+        fs.writeFileSync(jsonPath, JSON.stringify(resultData, null, 2));
+
+        // 3. Upload JSON cache to Drive (Persistence)
+        if (process.env.DRIVE_FOLDER_ID) {
+            // We upload it as a hidden/system file effectively by naming it .json
+            // This ensures that if the server restarts, we can download this JSON and skip re-processing.
+            try {
+                await uploadFileToDrive(process.env.DRIVE_FOLDER_ID, jsonPath, 'application/json', log);
+            } catch (uploadErr) {
+                console.error(`Error uploading cache for ${fileName}:`, uploadErr);
+            }
+        }
+
         log(`Finished processing ${fileName}`);
 
     } catch (err) {
@@ -294,12 +345,17 @@ if (process.env.NODE_ENV !== 'production') {
 
     watcher
         .on('add', filePath => {
-            log(`File added: ${filePath}`);
-            processPDF(filePath);
+            // Ignore JSON files in watcher to prevent double processing or loops
+            if (filePath.endsWith('.pdf')) {
+                log(`File added: ${filePath}`);
+                processPDF(filePath);
+            }
         })
         .on('change', filePath => {
-            log(`File changed: ${filePath}`);
-            processPDF(filePath);
+            if (filePath.endsWith('.pdf')) {
+                log(`File changed: ${filePath}`);
+                processPDF(filePath);
+            }
         })
         .on('error', error => console.log(`Watcher error: ${error}`));
 
@@ -320,19 +376,14 @@ if (process.env.NODE_ENV !== 'production') {
 // Initialize Drive Sync on startup (works in both local and Vercel)
 let driveSyncInitialized = false;
 async function initializeDriveSync() {
-    // Always allow re-initialization if called explicitly (e.g. via debug)
-    // But prevent concurrent runs if needed, or just let it run.
-    // For now, simple flag check, but we might want to reset it for force sync?
-    // Actually, let's just run the sync logic.
-
     const driveFolderId = process.env.DRIVE_FOLDER_ID;
     if (driveFolderId) {
         log(`Starting Drive Sync for folder: ${driveFolderId} to ${DATA_DIR}`);
 
-        // Initial sync
+        // Initial sync (downloads PDFs AND JSONs)
         await syncDriveFiles(driveFolderId, DATA_DIR, log);
 
-        // Explicitly process files after sync (crucial for Vercel where watcher is disabled)
+        // Explicitly process files after sync
         log("Drive Sync complete. Processing downloaded files...");
         try {
             const files = fs.readdirSync(DATA_DIR);
@@ -345,7 +396,7 @@ async function initializeDriveSync() {
             console.error("Error processing synced files:", err);
         }
 
-        // Poll every 5 minutes (only in local dev, Vercel will re-sync on each cold start)
+        // Poll every 5 minutes (only in local dev)
         if (process.env.NODE_ENV !== 'production') {
             setInterval(() => {
                 syncDriveFiles(driveFolderId, DATA_DIR, log);
