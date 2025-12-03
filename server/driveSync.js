@@ -7,10 +7,24 @@ const CREDENTIALS_PATH = path.join(__dirname, '../google-credentials.json');
 const DOWNLOAD_RECORD_PATH = path.join(__dirname, 'downloaded_files.json');
 
 async function authenticate() {
-    const auth = new google.auth.GoogleAuth({
-        keyFile: CREDENTIALS_PATH,
+    let authOptions = {
         scopes: SCOPES,
-    });
+    };
+
+    if (process.env.GOOGLE_CREDENTIALS_JSON) {
+        // Production (Vercel): Credentials from Env Var
+        try {
+            const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+            authOptions.credentials = credentials;
+        } catch (error) {
+            console.error("Error parsing GOOGLE_CREDENTIALS_JSON:", error);
+        }
+    } else {
+        // Local Development: Credentials from file
+        authOptions.keyFile = CREDENTIALS_PATH;
+    }
+
+    const auth = new google.auth.GoogleAuth(authOptions);
     return auth.getClient();
 }
 
