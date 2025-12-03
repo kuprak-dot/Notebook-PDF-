@@ -28,6 +28,7 @@ if (!fs.existsSync(DATA_DIR)) {
 
 // Store processed data in memory
 let processedFiles = {};
+let driveSyncInitialized = false; // Flag to track sync status
 
 const { syncDriveFiles, uploadSummaryToDrive, uploadFileToDrive, deleteFileFromDrive } = require('./driveSync');
 
@@ -37,6 +38,17 @@ const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.use(express.json());
+
+// Middleware to initialize Drive Sync on first request (for Vercel)
+// Placed BEFORE API routes to ensure data is ready
+app.use(async (req, res, next) => {
+    // Skip for static files if possible, but express.static handles those above.
+    // This will mostly catch API requests.
+    if (!driveSyncInitialized) {
+        await initializeDriveSync();
+    }
+    next();
+});
 
 // API to get processed files
 app.get('/api/results', (req, res) => {
@@ -374,7 +386,6 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Initialize Drive Sync on startup (works in both local and Vercel)
-let driveSyncInitialized = false;
 async function initializeDriveSync() {
     const driveFolderId = process.env.DRIVE_FOLDER_ID;
     if (driveFolderId) {
@@ -407,14 +418,6 @@ async function initializeDriveSync() {
     }
     driveSyncInitialized = true;
 }
-
-// Middleware to initialize Drive Sync on first request (for Vercel)
-app.use(async (req, res, next) => {
-    if (!driveSyncInitialized) {
-        await initializeDriveSync();
-    }
-    next();
-});
 
 // For local development
 if (process.env.NODE_ENV !== 'production') {
