@@ -81,20 +81,41 @@ async function syncDriveFiles(folderId, downloadDir, logFn = console.log) {
         if (!files || files.length === 0) {
             logFn('Drive Sync: No matching PDF/JSON files found.');
 
-            // DIAGNOSTIC: Check if ANY files exist in the folder
+            // DIAGNOSTIC 1: Check if ANY files exist in the target folder
             try {
-                logFn('Drive Sync Diagnostic: Checking for ANY files in folder...');
+                logFn('Drive Sync Diagnostic: Checking for ANY files in target folder...');
                 const diagRes = await drive.files.list({
                     q: `'${folderId}' in parents and trashed = false`,
                     fields: 'files(id, name, mimeType)',
-                    pageSize: 10
+                    pageSize: 5
                 });
                 const diagFiles = diagRes.data.files;
                 if (diagFiles && diagFiles.length > 0) {
-                    logFn(`Drive Sync Diagnostic: Found ${diagFiles.length} files (ignoring filter):`);
+                    logFn(`Drive Sync Diagnostic: Found ${diagFiles.length} files in folder (ignoring filter):`);
                     diagFiles.forEach(f => logFn(` - ${f.name} (${f.mimeType})`));
                 } else {
-                    logFn('Drive Sync Diagnostic: Folder appears completely empty to this account.');
+                    logFn('Drive Sync Diagnostic: Target folder appears completely empty to this account.');
+
+                    // DIAGNOSTIC 2: Check GLOBAL visibility (Did we share the wrong folder?)
+                    logFn('Drive Sync Diagnostic: Checking GLOBAL file visibility...');
+                    const globalRes = await drive.files.list({
+                        q: "trashed = false",
+                        fields: 'files(id, name, parents)',
+                        pageSize: 5
+                    });
+                    const globalFiles = globalRes.data.files;
+                    if (globalFiles && globalFiles.length > 0) {
+                        logFn(`Drive Sync Diagnostic: Found ${globalFiles.length} files globally accessible:`);
+                        globalFiles.forEach(f => {
+                            const parentId = f.parents ? f.parents[0] : 'No Parent';
+                            logFn(` - ${f.name} (Parent ID: ${parentId})`);
+                            if (parentId !== folderId) {
+                                logFn(`   ^^ WARNING: Parent ID ${parentId} does NOT match configured folder ID ${folderId}`);
+                            }
+                        });
+                    } else {
+                        logFn('Drive Sync Diagnostic: This Service Account cannot see ANY files anywhere. Sharing definitely failed.');
+                    }
                 }
             } catch (diagErr) {
                 logFn(`Drive Sync Diagnostic Error: ${diagErr.message}`);
