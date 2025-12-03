@@ -1,4 +1,8 @@
 {
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "nodemon server/index.js"
+  },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "chokidar": "^5.0.0",

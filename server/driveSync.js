@@ -43,15 +43,21 @@ async function downloadFile(drive, fileId, destPath) {
     });
 }
 
-function loadDownloadedFiles() {
-    if (fs.existsSync(DOWNLOAD_RECORD_PATH)) {
-        return JSON.parse(fs.readFileSync(DOWNLOAD_RECORD_PATH, 'utf8'));
+function getDownloadRecordPath(dataDir) {
+    return path.join(dataDir, 'downloaded_files.json');
+}
+
+function loadDownloadedFiles(dataDir) {
+    const recordPath = getDownloadRecordPath(dataDir);
+    if (fs.existsSync(recordPath)) {
+        return JSON.parse(fs.readFileSync(recordPath, 'utf8'));
     }
     return {};
 }
 
-function saveDownloadedFiles(files) {
-    fs.writeFileSync(DOWNLOAD_RECORD_PATH, JSON.stringify(files, null, 2));
+function saveDownloadedFiles(dataDir, files) {
+    const recordPath = getDownloadRecordPath(dataDir);
+    fs.writeFileSync(recordPath, JSON.stringify(files, null, 2));
 }
 
 async function syncDriveFiles(folderId, downloadDir) {
@@ -76,7 +82,7 @@ async function syncDriveFiles(folderId, downloadDir) {
             return;
         }
 
-        const downloaded = loadDownloadedFiles();
+        const downloaded = loadDownloadedFiles(downloadDir);
         let newFilesCount = 0;
 
         for (const file of files) {
@@ -100,7 +106,7 @@ async function syncDriveFiles(folderId, downloadDir) {
         }
 
         if (newFilesCount > 0) {
-            saveDownloadedFiles(downloaded);
+            saveDownloadedFiles(downloadDir, downloaded);
             console.log(`Drive Sync: Downloaded ${newFilesCount} new files.`);
         } else {
             console.log("Drive Sync: No new files to download.");

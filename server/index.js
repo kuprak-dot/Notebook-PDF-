@@ -14,6 +14,16 @@ if (process.env.NODE_ENV !== 'production') {
 const app = express();
 const port = process.env.PORT || 3000;
 
+// Define Data Directory based on environment
+const DATA_DIR = process.env.NODE_ENV === 'production' 
+    ? path.join('/tmp', 'data') 
+    : path.join(__dirname, '../data');
+
+// Ensure data directory exists immediately
+if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
 // Store processed data in memory
 let processedFiles = {};
 
@@ -98,9 +108,9 @@ ${text.substring(0, 20000)}
 }
 
 // Initialize Watcher (only in local development, not in Vercel)
+// Initialize Watcher (only in local development, not in Vercel)
 if (process.env.NODE_ENV !== 'production') {
-    const dataDir = path.join(__dirname, '../data');
-    const watcher = chokidar.watch(dataDir, {
+    const watcher = chokidar.watch(DATA_DIR, {
         ignored: /(^|[\/\\])\../, // ignore dotfiles
         persistent: true
     });
@@ -117,14 +127,15 @@ if (process.env.NODE_ENV !== 'production') {
         .on('error', error => console.log(`Watcher error: ${error}`));
 
     // Process existing files on startup
-    fs.readdir(dataDir, (err, files) => {
+    // Process existing files on startup
+    fs.readdir(DATA_DIR, (err, files) => {
         if (err) {
             console.error("Error reading data directory:", err);
             return;
         }
         files.forEach(file => {
             if (file.toLowerCase().endsWith('.pdf')) {
-                processPDF(path.join(dataDir, file));
+                processPDF(path.join(DATA_DIR, file));
             }
         });
     });
@@ -138,21 +149,15 @@ async function initializeDriveSync() {
 
     const driveFolderId = process.env.DRIVE_FOLDER_ID;
     if (driveFolderId) {
-        console.log(`Starting Drive Sync for folder: ${driveFolderId}`);
-        const dataDir = path.join(__dirname, '../data');
-
-        // Ensure data directory exists
-        if (!fs.existsSync(dataDir)) {
-            fs.mkdirSync(dataDir, { recursive: true });
-        }
+        console.log(`Starting Drive Sync for folder: ${driveFolderId} to ${DATA_DIR}`);
 
         // Initial sync
-        await syncDriveFiles(driveFolderId, dataDir);
+        await syncDriveFiles(driveFolderId, DATA_DIR);
 
         // Poll every 5 minutes (only in local dev, Vercel will re-sync on each cold start)
         if (process.env.NODE_ENV !== 'production') {
             setInterval(() => {
-                syncDriveFiles(driveFolderId, dataDir);
+                syncDriveFiles(driveFolderId, DATA_DIR);
             }, 5 * 60 * 1000);
         }
     } else {
