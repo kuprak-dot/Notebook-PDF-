@@ -79,7 +79,27 @@ async function syncDriveFiles(folderId, downloadDir, logFn = console.log) {
 
         const files = res.data.files;
         if (!files || files.length === 0) {
-            logFn('Drive Sync: No files found.');
+            logFn('Drive Sync: No matching PDF/JSON files found.');
+
+            // DIAGNOSTIC: Check if ANY files exist in the folder
+            try {
+                logFn('Drive Sync Diagnostic: Checking for ANY files in folder...');
+                const diagRes = await drive.files.list({
+                    q: `'${folderId}' in parents and trashed = false`,
+                    fields: 'files(id, name, mimeType)',
+                    pageSize: 10
+                });
+                const diagFiles = diagRes.data.files;
+                if (diagFiles && diagFiles.length > 0) {
+                    logFn(`Drive Sync Diagnostic: Found ${diagFiles.length} files (ignoring filter):`);
+                    diagFiles.forEach(f => logFn(` - ${f.name} (${f.mimeType})`));
+                } else {
+                    logFn('Drive Sync Diagnostic: Folder appears completely empty to this account.');
+                }
+            } catch (diagErr) {
+                logFn(`Drive Sync Diagnostic Error: ${diagErr.message}`);
+            }
+
             return;
         }
 
