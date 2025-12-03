@@ -80,52 +80,70 @@ ${text.substring(0, 20000)}
     }
 }
 
-// Initialize Watcher
-const dataDir = path.join(__dirname, '../data');
-const watcher = chokidar.watch(dataDir, {
-    ignored: /(^|[\/\\])\../, // ignore dotfiles
-    persistent: true
-});
-
-watcher
-    .on('add', filePath => {
-        console.log(`File added: ${filePath}`);
-        processPDF(filePath);
-    })
-    .on('change', filePath => {
-        console.log(`File changed: ${filePath}`);
-        processPDF(filePath);
-    })
-    .on('error', error => console.log(`Watcher error: ${error}`));
-
-// Process existing files on startup
-fs.readdir(dataDir, (err, files) => {
-    if (err) {
-        console.error("Error reading data directory:", err);
-        return;
-    }
-    files.forEach(file => {
-        if (file.toLowerCase().endsWith('.pdf')) {
-            processPDF(path.join(dataDir, file));
-        }
+// Initialize Watcher (only in local development, not in Vercel)
+if (process.env.NODE_ENV !== 'production') {
+    const dataDir = path.join(__dirname, '../data');
+    const watcher = chokidar.watch(dataDir, {
+        ignored: /(^|[\/\\])\../, // ignore dotfiles
+        persistent: true
     });
-});
 
-app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
-    console.log(`Watching for PDFs in ${dataDir}`);
+    watcher
+        .on('add', filePath => {
+            console.log(`File added: ${filePath}`);
+            processPDF(filePath);
+        })
+        .on('change', filePath => {
+            console.log(`File changed: ${filePath}`);
+            processPDF(filePath);
+        })
+        .on('error', error => console.log(`Watcher error: ${error}`));
 
-    // Start Drive Sync
-    const driveFolderId = process.env.DRIVE_FOLDER_ID;
-    if (driveFolderId) {
-        console.log(`Starting Drive Sync for folder: ${driveFolderId}`);
-        // Initial sync
-        syncDriveFiles(driveFolderId, dataDir);
-        // Poll every 5 minutes
+    // Process existing files on startup
+    fs.readdir(dataDir, (err, files) => {
+        if (err) {
+            console.error("Error reading data directory:", err);
+            return;
+        }
+        files.forEach(file => {
+            if (file.toLowerCase().endsWith('.pdf')) {
+                processPDF(path.join(dataDir, file));
+            }
+        });
+    });
+}
+
+// Initialize Drive Sync on startup (works in both local and Vercel)
+const driveFolderId = process.env.DRIVE_FOLDER_ID;
+if (driveFolderId) {
+    console.log(`Starting Drive Sync for folder: ${driveFolderId}`);
+    const dataDir = path.join(__dirname, '../data');
+
+    // Ensure data directory exists
+    if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+    }
+
+    // Initial sync
+    syncDriveFiles(driveFolderId, dataDir);
+
+    // Poll every 5 minutes (only in local dev, Vercel will re-sync on each cold start)
+    if (process.env.NODE_ENV !== 'production') {
         setInterval(() => {
             syncDriveFiles(driveFolderId, dataDir);
         }, 5 * 60 * 1000);
-    } else {
-        console.log("Drive Sync skipped: DRIVE_FOLDER_ID not set in .env");
     }
-});
+} else {
+    console.log("Drive Sync skipped: DRIVE_FOLDER_ID not set");
+}
+
+// For local development
+if (process.env.NODE_ENV !== 'production') {
+    const port = process.env.PORT || 3000;
+    app.listen(port, () => {
+        console.log(`Server running at http://localhost:${port}`);
+    });
+}
+
+// Export for Vercel
+module.exports = app;
