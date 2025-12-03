@@ -55,6 +55,34 @@ app.delete('/api/results/:filename', (req, res) => {
     }
 });
 
+// Debug Endpoint
+app.get('/api/debug', (req, res) => {
+    let filesInDataDir = [];
+    try {
+        if (fs.existsSync(DATA_DIR)) {
+            filesInDataDir = fs.readdirSync(DATA_DIR);
+        } else {
+            filesInDataDir = ['DATA_DIR does not exist'];
+        }
+    } catch (e) {
+        filesInDataDir = ['Error reading DATA_DIR: ' + e.message];
+    }
+
+    res.json({
+        nodeEnv: process.env.NODE_ENV,
+        dataDir: DATA_DIR,
+        filesInDataDir: filesInDataDir,
+        processedFilesCount: Object.keys(processedFiles).length,
+        processedFileNames: Object.keys(processedFiles),
+        driveSyncInitialized: driveSyncInitialized,
+        envVars: {
+            GEMINI_API_KEY: !!process.env.GEMINI_API_KEY ? 'Present' : 'Missing',
+            DRIVE_FOLDER_ID: !!process.env.DRIVE_FOLDER_ID ? 'Present' : 'Missing',
+            GOOGLE_CREDENTIALS_JSON: !!process.env.GOOGLE_CREDENTIALS_JSON ? 'Present' : 'Missing'
+        }
+    });
+});
+
 // API to process a URL
 app.post('/api/process-url', async (req, res) => {
     const { url } = req.body;
