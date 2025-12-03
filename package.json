@@ -1,0 +1,13 @@
+{
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "chokidar": "^5.0.0",
+    "concurrently": "^9.2.1",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "googleapis": "^166.0.0",
+    "nodemon": "^3.1.11",
+    "pdf-parse": "^1.1.1"
+  }
+}
