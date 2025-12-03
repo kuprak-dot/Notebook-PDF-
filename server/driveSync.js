@@ -30,8 +30,10 @@ async function authenticate() {
 
 async function downloadFile(drive, fileId, destPath) {
     const dest = fs.createWriteStream(destPath);
+    // supportsAllDrives is technically for list/get metadata, but good to have if needed. 
+    // For media download, it's usually not strictly required if you have the ID, but let's be safe.
     const res = await drive.files.get(
-        { fileId, alt: 'media' },
+        { fileId, alt: 'media', supportsAllDrives: true },
         { responseType: 'stream' }
     );
 
@@ -73,9 +75,12 @@ async function syncDriveFiles(folderIdRaw, downloadDir, logFn = console.log) {
         const drive = google.drive({ version: 'v3', auth: authClient });
 
         // Updated query to include JSON files
+        // ADDED: supportsAllDrives and includeItemsFromAllDrives for Shared Drive support
         const res = await drive.files.list({
             q: `'${folderId}' in parents and (mimeType = 'application/pdf' or mimeType = 'application/json') and trashed = false`,
             fields: 'files(id, name, modifiedTime, mimeType)',
+            supportsAllDrives: true,
+            includeItemsFromAllDrives: true
         });
 
         const files = res.data.files;
@@ -88,7 +93,9 @@ async function syncDriveFiles(folderIdRaw, downloadDir, logFn = console.log) {
                 const diagRes = await drive.files.list({
                     q: `'${folderId}' in parents and trashed = false`,
                     fields: 'files(id, name, mimeType)',
-                    pageSize: 5
+                    pageSize: 5,
+                    supportsAllDrives: true,
+                    includeItemsFromAllDrives: true
                 });
                 const diagFiles = diagRes.data.files;
                 if (diagFiles && diagFiles.length > 0) {
@@ -102,7 +109,9 @@ async function syncDriveFiles(folderIdRaw, downloadDir, logFn = console.log) {
                     const globalRes = await drive.files.list({
                         q: "trashed = false",
                         fields: 'files(id, name, parents)',
-                        pageSize: 5
+                        pageSize: 5,
+                        supportsAllDrives: true,
+                        includeItemsFromAllDrives: true
                     });
                     const globalFiles = globalRes.data.files;
                     if (globalFiles && globalFiles.length > 0) {
@@ -194,7 +203,8 @@ async function uploadSummaryToDrive(folderId, originalFileName, analysisText, lo
         const response = await drive.files.create({
             requestBody: fileMetadata,
             media: media,
-            fields: 'id, name'
+            fields: 'id, name',
+            supportsAllDrives: true
         });
 
         logFn(`Successfully uploaded: ${response.data.name} (ID: ${response.data.id})`);
@@ -228,7 +238,8 @@ async function uploadFileToDrive(folderId, filePath, mimeType = 'application/jso
         const response = await drive.files.create({
             requestBody: fileMetadata,
             media: media,
-            fields: 'id, name'
+            fields: 'id, name',
+            supportsAllDrives: true
         });
 
         logFn(`Successfully uploaded: ${response.data.name} (ID: ${response.data.id})`);
@@ -253,6 +264,8 @@ async function deleteFileFromDrive(folderIdRaw, fileName, logFn = console.log) {
         const res = await drive.files.list({
             q: `'${folderId}' in parents and name = '${fileName}' and trashed = false`,
             fields: 'files(id, name)',
+            supportsAllDrives: true,
+            includeItemsFromAllDrives: true
         });
 
         const files = res.data.files;
@@ -263,7 +276,10 @@ async function deleteFileFromDrive(folderIdRaw, fileName, logFn = console.log) {
 
         // Delete all matches (though usually should be one)
         for (const file of files) {
-            await drive.files.delete({ fileId: file.id });
+            await drive.files.delete({
+                fileId: file.id,
+                supportsAllDrives: true
+            });
             logFn(`Deleted ${fileName} (ID: ${file.id}) from Drive.`);
         }
         return true;
