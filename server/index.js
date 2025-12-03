@@ -1,10 +1,15 @@
 const express = require('express');
-const chokidar = require('chokidar');
 const fs = require('fs');
 const path = require('path');
 const pdf = require('pdf-parse');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
+
+// Only import chokidar in non-production (local dev)
+let chokidar;
+if (process.env.NODE_ENV !== 'production') {
+    chokidar = require('chokidar');
+}
 
 const app = express();
 const port = process.env.PORT || 3000;
