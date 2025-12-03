@@ -55,8 +55,27 @@ app.delete('/api/results/:filename', (req, res) => {
     }
 });
 
+// Log capturing
+let serverLogs = [];
+function log(message) {
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}`;
+    console.log(logMessage);
+    serverLogs.push(logMessage);
+    // Keep only last 100 logs
+    if (serverLogs.length > 100) {
+        serverLogs.shift();
+    }
+}
+
 // Debug Endpoint
-app.get('/api/debug', (req, res) => {
+app.get('/api/debug', async (req, res) => {
+    // Force Sync Option
+    if (req.query.forceSync === 'true') {
+        log("Force Sync requested via Debug API");
+        await initializeDriveSync();
+    }
+
     let filesInDataDir = [];
     try {
         if (fs.existsSync(DATA_DIR)) {
@@ -66,6 +85,18 @@ app.get('/api/debug', (req, res) => {
         }
     } catch (e) {
         filesInDataDir = ['Error reading DATA_DIR: ' + e.message];
+    }
+
+    let credentialsStatus = 'Missing';
+    let credentialsError = null;
+    if (process.env.GOOGLE_CREDENTIALS_JSON) {
+        try {
+            JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+            credentialsStatus = 'Valid JSON';
+        } catch (e) {
+            credentialsStatus = 'Invalid JSON';
+            credentialsError = e.message;
+        }
     }
 
     res.json({
@@ -78,8 +109,10 @@ app.get('/api/debug', (req, res) => {
         envVars: {
             GEMINI_API_KEY: !!process.env.GEMINI_API_KEY ? 'Present' : 'Missing',
             DRIVE_FOLDER_ID: !!process.env.DRIVE_FOLDER_ID ? 'Present' : 'Missing',
-            GOOGLE_CREDENTIALS_JSON: !!process.env.GOOGLE_CREDENTIALS_JSON ? 'Present' : 'Missing'
-        }
+            GOOGLE_CREDENTIALS_JSON: credentialsStatus,
+            credentialsError: credentialsError
+        },
+        logs: serverLogs
     });
 });
 
@@ -102,7 +135,7 @@ app.post('/api/process-url', async (req, res) => {
 // Function to process PDF
 async function processPDF(filePath) {
     const fileName = path.basename(filePath);
-    console.log(`Processing ${fileName}...`);
+    log(`Processing ${fileName}...`);
 
     try {
         const dataBuffer = fs.readFileSync(filePath);
@@ -144,7 +177,7 @@ ${text.substring(0, 20000)}
             textPreview: text.substring(0, 200) + "...",
             analysis: analysis
         };
-        console.log(`Finished processing ${fileName}`);
+        log(`Finished processing ${fileName}`);
 
     } catch (err) {
         console.error(`Error processing ${fileName}:`, err);
@@ -153,7 +186,7 @@ ${text.substring(0, 20000)}
 
 // Function to process URL
 async function processURL(url) {
-    console.log(`Processing URL: ${url}...`);
+    log(`Processing URL: ${url}...`);
     const fileName = url; // Use URL as the key/filename
 
     try {
@@ -211,7 +244,7 @@ ${text.substring(0, 20000)}
             analysis: analysis,
             type: 'url'
         };
-        console.log(`Finished processing URL: ${url}`);
+        log(`Finished processing URL: ${url}`);
 
     } catch (err) {
         console.error(`Error processing URL ${url}:`, err);
@@ -228,11 +261,11 @@ if (process.env.NODE_ENV !== 'production') {
 
     watcher
         .on('add', filePath => {
-            console.log(`File added: ${filePath}`);
+            log(`File added: ${filePath}`);
             processPDF(filePath);
         })
         .on('change', filePath => {
-            console.log(`File changed: ${filePath}`);
+            log(`File changed: ${filePath}`);
             processPDF(filePath);
         })
         .on('error', error => console.log(`Watcher error: ${error}`));
@@ -254,18 +287,20 @@ if (process.env.NODE_ENV !== 'production') {
 // Initialize Drive Sync on startup (works in both local and Vercel)
 let driveSyncInitialized = false;
 async function initializeDriveSync() {
-    if (driveSyncInitialized) return;
-    driveSyncInitialized = true;
+    // Always allow re-initialization if called explicitly (e.g. via debug)
+    // But prevent concurrent runs if needed, or just let it run.
+    // For now, simple flag check, but we might want to reset it for force sync?
+    // Actually, let's just run the sync logic.
 
     const driveFolderId = process.env.DRIVE_FOLDER_ID;
     if (driveFolderId) {
-        console.log(`Starting Drive Sync for folder: ${driveFolderId} to ${DATA_DIR}`);
+        log(`Starting Drive Sync for folder: ${driveFolderId} to ${DATA_DIR}`);
 
         // Initial sync
-        await syncDriveFiles(driveFolderId, DATA_DIR);
+        await syncDriveFiles(driveFolderId, DATA_DIR, log);
 
         // Explicitly process files after sync (crucial for Vercel where watcher is disabled)
-        console.log("Drive Sync complete. Processing downloaded files...");
+        log("Drive Sync complete. Processing downloaded files...");
         try {
             const files = fs.readdirSync(DATA_DIR);
             for (const file of files) {
@@ -280,12 +315,13 @@ async function initializeDriveSync() {
         // Poll every 5 minutes (only in local dev, Vercel will re-sync on each cold start)
         if (process.env.NODE_ENV !== 'production') {
             setInterval(() => {
-                syncDriveFiles(driveFolderId, DATA_DIR);
+                syncDriveFiles(driveFolderId, DATA_DIR, log);
             }, 5 * 60 * 1000);
         }
     } else {
-        console.log("Drive Sync skipped: DRIVE_FOLDER_ID not set");
+        log("Drive Sync skipped: DRIVE_FOLDER_ID not set");
     }
+    driveSyncInitialized = true;
 }
 
 // Middleware to initialize Drive Sync on first request (for Vercel)

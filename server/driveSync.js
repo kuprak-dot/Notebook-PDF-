@@ -60,13 +60,13 @@ function saveDownloadedFiles(dataDir, files) {
     fs.writeFileSync(recordPath, JSON.stringify(files, null, 2));
 }
 
-async function syncDriveFiles(folderId, downloadDir) {
+async function syncDriveFiles(folderId, downloadDir, logFn = console.log) {
     if (!folderId) {
-        console.log("Drive Sync: No Folder ID provided. Skipping.");
+        logFn("Drive Sync: No Folder ID provided. Skipping.");
         return;
     }
 
-    console.log("Drive Sync: Checking for new files...");
+    logFn("Drive Sync: Checking for new files...");
     try {
         const authClient = await authenticate();
         const drive = google.drive({ version: 'v3', auth: authClient });
@@ -78,7 +78,7 @@ async function syncDriveFiles(folderId, downloadDir) {
 
         const files = res.data.files;
         if (!files || files.length === 0) {
-            console.log('Drive Sync: No files found.');
+            logFn('Drive Sync: No files found.');
             return;
         }
 
@@ -87,7 +87,7 @@ async function syncDriveFiles(folderId, downloadDir) {
 
         for (const file of files) {
             if (!downloaded[file.id]) {
-                console.log(`Drive Sync: Downloading ${file.name}...`);
+                logFn(`Drive Sync: Downloading ${file.name}...`);
                 const destPath = path.join(downloadDir, file.name);
 
                 try {
@@ -98,22 +98,25 @@ async function syncDriveFiles(folderId, downloadDir) {
                         driveModifiedTime: file.modifiedTime
                     };
                     newFilesCount++;
-                    console.log(`Drive Sync: Downloaded ${file.name}`);
+                    logFn(`Drive Sync: Downloaded ${file.name}`);
                 } catch (err) {
-                    console.error(`Drive Sync: Error downloading ${file.name}:`, err);
+                    logFn(`Drive Sync: Error downloading ${file.name}: ${err.message}`);
                 }
             }
         }
 
         if (newFilesCount > 0) {
             saveDownloadedFiles(downloadDir, downloaded);
-            console.log(`Drive Sync: Downloaded ${newFilesCount} new files.`);
+            logFn(`Drive Sync: Downloaded ${newFilesCount} new files.`);
         } else {
-            console.log("Drive Sync: No new files to download.");
+            logFn("Drive Sync: No new files to download.");
         }
 
     } catch (error) {
-        console.error("Drive Sync Error:", error.message);
+        logFn(`Drive Sync Error: ${error.message}`);
+        if (error.response) {
+            logFn(`Drive Sync Error Details: ${JSON.stringify(error.response.data)}`);
+        }
     }
 }
 
