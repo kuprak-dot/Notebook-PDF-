@@ -73,10 +73,66 @@
 
 <body>
     <h1>Notebook PDF Analyzer</h1>
-    <button class="refresh-btn" onclick="fetchResults()">Refresh Results</button>
+    
+    <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px;">
+        <h2 style="margin-top: 0; color: #2c3e50;">Analyze Website URL</h2>
+        <div style="display: flex; gap: 10px;">
+            <input type="url" id="urlInput" placeholder="Enter website URL (e.g., https://example.com/article)" style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+            <button onclick="submitURL()" style="background-color: #27ae60; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer;">Analyze</button>
+        </div>
+        <div id="urlStatus" style="margin-top: 10px; color: #7f8c8d;"></div>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="margin: 0; color: #2c3e50;">Processed Files & URLs</h2>
+        <button class="refresh-btn" onclick="fetchResults()">Refresh Results</button>
+    </div>
     <div id="results-container"></div>
 
     <script>
+        async function submitURL() {
+            const urlInput = document.getElementById('urlInput');
+            const statusDiv = document.getElementById('urlStatus');
+            const url = urlInput.value.trim();
+
+            if (!url) {
+                alert('Please enter a URL');
+                return;
+            }
+
+            statusDiv.textContent = 'Processing URL... This may take a moment.';
+            urlInput.disabled = true;
+
+            try {
+                const response = await fetch('/api/process-url', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ url })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    statusDiv.textContent = 'URL processed successfully!';
+                    urlInput.value = '';
+                    fetchResults(); // Refresh list immediately
+                } else {
+                    statusDiv.textContent = 'Error: ' + data.message;
+                }
+            } catch (error) {
+                console.error('Error submitting URL:', error);
+                statusDiv.textContent = 'Error submitting URL';
+            } finally {
+                urlInput.disabled = false;
+                setTimeout(() => {
+                    if (statusDiv.textContent === 'URL processed successfully!') {
+                        statusDiv.textContent = '';
+                    }
+                }, 3000);
+            }
+        }
+
         async function deleteFile(filename) {
             if (!confirm(`Are you sure you want to delete "${filename}" from memory?`)) {
                 return;

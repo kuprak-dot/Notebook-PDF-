@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const pdf = require('pdf-parse');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const cheerio = require('cheerio');
+const axios = require('axios');
 require('dotenv').config();
 
 // Only import chokidar in non-production (local dev)
@@ -15,8 +17,8 @@ const app = express();
 const port = process.env.PORT || 3000;
 
 // Define Data Directory based on environment
-const DATA_DIR = process.env.NODE_ENV === 'production' 
-    ? path.join('/tmp', 'data') 
+const DATA_DIR = process.env.NODE_ENV === 'production'
+    ? path.join('/tmp', 'data')
     : path.join(__dirname, '../data');
 
 // Ensure data directory exists immediately
@@ -28,8 +30,6 @@ if (!fs.existsSync(DATA_DIR)) {
 let processedFiles = {};
 
 const { syncDriveFiles } = require('./driveSync');
-
-// ... (existing imports)
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'API_KEY_MISSING');
@@ -52,6 +52,22 @@ app.delete('/api/results/:filename', (req, res) => {
         res.json({ success: true, message: `${filename} deleted` });
     } else {
         res.status(404).json({ success: false, message: 'File not found' });
+    }
+});
+
+// API to process a URL
+app.post('/api/process-url', async (req, res) => {
+    const { url } = req.body;
+    if (!url) {
+        return res.status(400).json({ success: false, message: 'URL is required' });
+    }
+
+    try {
+        await processURL(url);
+        res.json({ success: true, message: 'URL processed successfully' });
+    } catch (error) {
+        console.error('Error processing URL:', error);
+        res.status(500).json({ success: false, message: 'Error processing URL: ' + error.message });
     }
 });
 
@@ -107,7 +123,74 @@ ${text.substring(0, 20000)}
     }
 }
 
-// Initialize Watcher (only in local development, not in Vercel)
+// Function to process URL
+async function processURL(url) {
+    console.log(`Processing URL: ${url}...`);
+    const fileName = url; // Use URL as the key/filename
+
+    try {
+        const response = await axios.get(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+        });
+        const html = response.data;
+        const $ = cheerio.load(html);
+
+        // Remove scripts, styles, and other non-content elements
+        $('script').remove();
+        $('style').remove();
+        $('nav').remove();
+        $('footer').remove();
+        $('header').remove();
+
+        // Extract text
+        const text = $('body').text().replace(/\s+/g, ' ').trim();
+
+        // Analyze with Gemini
+        let analysis = "Analysis pending or failed.";
+        if (process.env.GEMINI_API_KEY) {
+            try {
+                const prompt = `
+Analyze the following text from a website (${url}). Provide a comprehensive and detailed analysis.
+
+**Output Structure:**
+
+1.  **Executive Summary**: A concise paragraph summarizing the main topic and purpose of the web page.
+2.  **Detailed Key Points**: A bulleted list of the most important information, facts, or arguments presented. Be specific.
+3.  **Action Items & Deadlines**: Extract any tasks, calls to action, or specific dates/deadlines mentioned. If none, state "None identified."
+4.  **Technical/Medical Terminology**: If the text contains specialized terms (medical, legal, technical), list and briefly define them based on context.
+5.  **Unresolved Questions**: Identify any questions raised in the text that remain unanswered or require follow-up.
+
+**Text Content:**
+${text.substring(0, 20000)}
+`;
+                const result = await model.generateContent(prompt);
+                const response = await result.response;
+                analysis = response.text();
+            } catch (aiError) {
+                console.error("AI Error:", aiError);
+                analysis = `Error generating AI analysis: ${aiError.message}`;
+            }
+        } else {
+            analysis = "API Key missing. Please add GEMINI_API_KEY to .env file.";
+        }
+
+        processedFiles[fileName] = {
+            name: fileName,
+            timestamp: new Date(),
+            textPreview: text.substring(0, 200) + "...",
+            analysis: analysis,
+            type: 'url'
+        };
+        console.log(`Finished processing URL: ${url}`);
+
+    } catch (err) {
+        console.error(`Error processing URL ${url}:`, err);
+        throw err;
+    }
+}
+
 // Initialize Watcher (only in local development, not in Vercel)
 if (process.env.NODE_ENV !== 'production') {
     const watcher = chokidar.watch(DATA_DIR, {
@@ -126,7 +209,6 @@ if (process.env.NODE_ENV !== 'production') {
         })
         .on('error', error => console.log(`Watcher error: ${error}`));
 
-    // Process existing files on startup
     // Process existing files on startup
     fs.readdir(DATA_DIR, (err, files) => {
         if (err) {
@@ -154,6 +236,19 @@ async function initializeDriveSync() {
         // Initial sync
         await syncDriveFiles(driveFolderId, DATA_DIR);
 
+        // Explicitly process files after sync (crucial for Vercel where watcher is disabled)
+        console.log("Drive Sync complete. Processing downloaded files...");
+        try {
+            const files = fs.readdirSync(DATA_DIR);
+            for (const file of files) {
+                if (file.toLowerCase().endsWith('.pdf')) {
+                    await processPDF(path.join(DATA_DIR, file));
+                }
+            }
+        } catch (err) {
+            console.error("Error processing synced files:", err);
+        }
+
         // Poll every 5 minutes (only in local dev, Vercel will re-sync on each cold start)
         if (process.env.NODE_ENV !== 'production') {
             setInterval(() => {
@@ -175,7 +270,6 @@ app.use(async (req, res, next) => {
 
 // For local development
 if (process.env.NODE_ENV !== 'production') {
-    const port = process.env.PORT || 3000;
     app.listen(port, () => {
         console.log(`Server running at http://localhost:${port}`);
         // Initialize Drive Sync immediately in local dev
