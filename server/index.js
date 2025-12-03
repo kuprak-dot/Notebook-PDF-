@@ -29,7 +29,7 @@ if (!fs.existsSync(DATA_DIR)) {
 // Store processed data in memory
 let processedFiles = {};
 
-const { syncDriveFiles } = require('./driveSync');
+const { syncDriveFiles, uploadSummaryToDrive } = require('./driveSync');
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'API_KEY_MISSING');
@@ -129,6 +129,39 @@ app.post('/api/process-url', async (req, res) => {
     } catch (error) {
         console.error('Error processing URL:', error);
         res.status(500).json({ success: false, message: 'Error processing URL: ' + error.message });
+    }
+});
+
+// API to save analysis to Google Drive
+app.post('/api/save-to-drive', async (req, res) => {
+    const { filename } = req.body;
+    if (!filename) {
+        return res.status(400).json({ success: false, message: 'Filename is required' });
+    }
+
+    const fileData = processedFiles[filename];
+    if (!fileData) {
+        return res.status(404).json({ success: false, message: 'File not found in processed files' });
+    }
+
+    const driveFolderId = process.env.DRIVE_FOLDER_ID;
+    if (!driveFolderId) {
+        return res.status(500).json({ success: false, message: 'Drive folder ID not configured' });
+    }
+
+    try {
+        const result = await uploadSummaryToDrive(driveFolderId, filename, fileData.analysis, log);
+        res.json({
+            success: true,
+            message: 'Summary saved to Google Drive successfully',
+            driveFile: result
+        });
+    } catch (error) {
+        console.error('Error saving to Drive:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error saving to Drive: ' + error.message
+        });
     }
 });
 

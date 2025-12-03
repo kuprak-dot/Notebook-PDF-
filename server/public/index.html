@@ -73,12 +73,15 @@
 
 <body>
     <h1>Notebook PDF Analyzer</h1>
-    
-    <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px;">
+
+    <div
+        style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px;">
         <h2 style="margin-top: 0; color: #2c3e50;">Analyze Website URL</h2>
         <div style="display: flex; gap: 10px;">
-            <input type="url" id="urlInput" placeholder="Enter website URL (e.g., https://example.com/article)" style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
-            <button onclick="submitURL()" style="background-color: #27ae60; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer;">Analyze</button>
+            <input type="url" id="urlInput" placeholder="Enter website URL (e.g., https://example.com/article)"
+                style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
+            <button onclick="submitURL()"
+                style="background-color: #27ae60; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer;">Analyze</button>
         </div>
         <div id="urlStatus" style="margin-top: 10px; color: #7f8c8d;"></div>
     </div>
@@ -155,6 +158,32 @@
             }
         }
 
+        async function saveToDrive(filename) {
+            if (!confirm(`Save analysis for "${filename}" to Google Drive?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/save-to-drive', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ filename })
+                });
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('Successfully saved to Google Drive: ' + data.driveFile.name);
+                } else {
+                    alert('Error saving to Drive: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Error saving to Drive:', error);
+                alert('Error saving to Drive');
+            }
+        }
+
         async function fetchResults() {
             const container = document.getElementById('results-container');
             try {
@@ -179,10 +208,16 @@
                                 <div class="file-name">${file.name}</div>
                                 <div class="timestamp">Processed: ${new Date(file.timestamp).toLocaleString()}</div>
                             </div>
-                            <button onclick="deleteFile('${file.name.replace(/'/g, "\\'")}');" 
-                                    style="background-color: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
-                                Delete
-                            </button>
+                            <div style="display: flex; gap: 10px;">
+                                <button onclick="saveToDrive('${file.name.replace(/'/g, "\\'")}')" 
+                                        style="background-color: #27ae60; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
+                                    Save to Drive
+                                </button>
+                                <button onclick="deleteFile('${file.name.replace(/'/g, "\\'")}')" 
+                                        style="background-color: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
+                                    Delete
+                                </button>
+                            </div>
                         </div>
                         
                         <div class="section-title">AI Analysis</div>

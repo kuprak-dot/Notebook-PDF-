@@ -2,7 +2,7 @@ const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
 
-const SCOPES = ['https://www.googleapis.com/auth/drive.readonly'];
+const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
 const CREDENTIALS_PATH = path.join(__dirname, '../google-credentials.json');
 const DOWNLOAD_RECORD_PATH = path.join(__dirname, 'downloaded_files.json');
 
@@ -120,4 +120,44 @@ async function syncDriveFiles(folderId, downloadDir, logFn = console.log) {
     }
 }
 
-module.exports = { syncDriveFiles };
+async function uploadSummaryToDrive(folderId, originalFileName, analysisText, logFn = console.log) {
+    if (!folderId) {
+        throw new Error('Drive Folder ID not provided');
+    }
+
+    logFn(`Uploading summary for ${originalFileName} to Drive...`);
+
+    try {
+        const authClient = await authenticate();
+        const drive = google.drive({ version: 'v3', auth: authClient });
+
+        // Create filename with "notebook özet" suffix
+        const baseName = path.basename(originalFileName, path.extname(originalFileName));
+        const summaryFileName = `${baseName} notebook özet.txt`;
+
+        const fileMetadata = {
+            name: summaryFileName,
+            parents: [folderId],
+            mimeType: 'text/plain'
+        };
+
+        const media = {
+            mimeType: 'text/plain',
+            body: analysisText
+        };
+
+        const response = await drive.files.create({
+            requestBody: fileMetadata,
+            media: media,
+            fields: 'id, name'
+        });
+
+        logFn(`Successfully uploaded: ${response.data.name} (ID: ${response.data.id})`);
+        return response.data;
+    } catch (error) {
+        logFn(`Error uploading summary: ${error.message}`);
+        throw error;
+    }
+}
+
+module.exports = { syncDriveFiles, uploadSummaryToDrive };
