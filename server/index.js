@@ -28,6 +28,18 @@ app.get('/api/results', (req, res) => {
     res.json(Object.values(processedFiles));
 });
 
+// API to delete a processed file from memory
+app.delete('/api/results/:filename', (req, res) => {
+    const filename = req.params.filename;
+    if (processedFiles[filename]) {
+        delete processedFiles[filename];
+        console.log(`Deleted ${filename} from memory`);
+        res.json({ success: true, message: `${filename} deleted` });
+    } else {
+        res.status(404).json({ success: false, message: 'File not found' });
+    }
+});
+
 // Function to process PDF
 async function processPDF(filePath) {
     const fileName = path.basename(filePath);
