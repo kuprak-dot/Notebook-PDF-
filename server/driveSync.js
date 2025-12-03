@@ -60,7 +60,8 @@ function saveDownloadedFiles(dataDir, files) {
     fs.writeFileSync(recordPath, JSON.stringify(files, null, 2));
 }
 
-async function syncDriveFiles(folderId, downloadDir, logFn = console.log) {
+async function syncDriveFiles(folderIdRaw, downloadDir, logFn = console.log) {
+    const folderId = folderIdRaw ? folderIdRaw.trim() : null;
     if (!folderId) {
         logFn("Drive Sync: No Folder ID provided. Skipping.");
         return;
@@ -238,7 +239,8 @@ async function uploadFileToDrive(folderId, filePath, mimeType = 'application/jso
     }
 }
 
-async function deleteFileFromDrive(folderId, fileName, logFn = console.log) {
+async function deleteFileFromDrive(folderIdRaw, fileName, logFn = console.log) {
+    const folderId = folderIdRaw ? folderIdRaw.trim() : null;
     if (!folderId) throw new Error('Drive Folder ID not provided');
 
     logFn(`Attempting to delete ${fileName} from Drive...`);

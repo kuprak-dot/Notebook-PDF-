@@ -73,7 +73,7 @@ app.delete('/api/results/:filename', async (req, res) => {
         if (fs.existsSync(jsonPath)) fs.unlinkSync(jsonPath);
 
         // 3. Remove from Drive (both PDF and JSON analysis)
-        const driveFolderId = process.env.DRIVE_FOLDER_ID;
+        const driveFolderId = process.env.DRIVE_FOLDER_ID ? process.env.DRIVE_FOLDER_ID.trim() : null;
         if (driveFolderId) {
             await deleteFileFromDrive(driveFolderId, filename, log);
             await deleteFileFromDrive(driveFolderId, `${filename}.json`, log);
@@ -143,7 +143,7 @@ app.get('/api/debug', async (req, res) => {
         driveSyncInitialized: driveSyncInitialized,
         envVars: {
             GEMINI_API_KEY: !!process.env.GEMINI_API_KEY ? 'Present' : 'Missing',
-            DRIVE_FOLDER_ID: process.env.DRIVE_FOLDER_ID || 'Missing',
+            DRIVE_FOLDER_ID: process.env.DRIVE_FOLDER_ID ? process.env.DRIVE_FOLDER_ID.trim() : 'Missing',
             GOOGLE_CREDENTIALS_JSON: credentialsStatus,
             clientEmail: clientEmail,
             credentialsError: credentialsError
@@ -180,7 +180,7 @@ app.post('/api/save-to-drive', async (req, res) => {
         return res.status(404).json({ success: false, message: 'File not found in processed files' });
     }
 
-    const driveFolderId = process.env.DRIVE_FOLDER_ID;
+    const driveFolderId = process.env.DRIVE_FOLDER_ID ? process.env.DRIVE_FOLDER_ID.trim() : null;
     if (!driveFolderId) {
         return res.status(500).json({ success: false, message: 'Drive folder ID not configured' });
     }
@@ -267,11 +267,12 @@ ${text.substring(0, 20000)}
         fs.writeFileSync(jsonPath, JSON.stringify(resultData, null, 2));
 
         // 3. Upload JSON cache to Drive (Persistence)
-        if (process.env.DRIVE_FOLDER_ID) {
+        const driveFolderId = process.env.DRIVE_FOLDER_ID ? process.env.DRIVE_FOLDER_ID.trim() : null;
+        if (driveFolderId) {
             // We upload it as a hidden/system file effectively by naming it .json
             // This ensures that if the server restarts, we can download this JSON and skip re-processing.
             try {
-                await uploadFileToDrive(process.env.DRIVE_FOLDER_ID, jsonPath, 'application/json', log);
+                await uploadFileToDrive(driveFolderId, jsonPath, 'application/json', log);
             } catch (uploadErr) {
                 console.error(`Error uploading cache for ${fileName}:`, uploadErr);
             }
@@ -391,7 +392,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 // Initialize Drive Sync on startup (works in both local and Vercel)
 async function initializeDriveSync() {
-    const driveFolderId = process.env.DRIVE_FOLDER_ID;
+    const driveFolderId = process.env.DRIVE_FOLDER_ID ? process.env.DRIVE_FOLDER_ID.trim() : null;
     if (driveFolderId) {
         log(`Starting Drive Sync for folder: ${driveFolderId} to ${DATA_DIR}`);
 
