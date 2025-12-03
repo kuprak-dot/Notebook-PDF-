@@ -121,9 +121,12 @@ app.get('/api/debug', async (req, res) => {
 
     let credentialsStatus = 'Missing';
     let credentialsError = null;
+    let clientEmail = 'Unknown';
+
     if (process.env.GOOGLE_CREDENTIALS_JSON) {
         try {
-            JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+            const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
+            clientEmail = creds.client_email;
             credentialsStatus = 'Valid JSON';
         } catch (e) {
             credentialsStatus = 'Invalid JSON';
@@ -140,8 +143,9 @@ app.get('/api/debug', async (req, res) => {
         driveSyncInitialized: driveSyncInitialized,
         envVars: {
             GEMINI_API_KEY: !!process.env.GEMINI_API_KEY ? 'Present' : 'Missing',
-            DRIVE_FOLDER_ID: !!process.env.DRIVE_FOLDER_ID ? 'Present' : 'Missing',
+            DRIVE_FOLDER_ID: process.env.DRIVE_FOLDER_ID || 'Missing',
             GOOGLE_CREDENTIALS_JSON: credentialsStatus,
+            clientEmail: clientEmail,
             credentialsError: credentialsError
         },
         logs: serverLogs
