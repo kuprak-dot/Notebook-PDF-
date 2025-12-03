@@ -126,34 +126,50 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // Initialize Drive Sync on startup (works in both local and Vercel)
-const driveFolderId = process.env.DRIVE_FOLDER_ID;
-if (driveFolderId) {
-    console.log(`Starting Drive Sync for folder: ${driveFolderId}`);
-    const dataDir = path.join(__dirname, '../data');
+let driveSyncInitialized = false;
+async function initializeDriveSync() {
+    if (driveSyncInitialized) return;
+    driveSyncInitialized = true;
 
-    // Ensure data directory exists
-    if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
+    const driveFolderId = process.env.DRIVE_FOLDER_ID;
+    if (driveFolderId) {
+        console.log(`Starting Drive Sync for folder: ${driveFolderId}`);
+        const dataDir = path.join(__dirname, '../data');
+
+        // Ensure data directory exists
+        if (!fs.existsSync(dataDir)) {
+            fs.mkdirSync(dataDir, { recursive: true });
+        }
+
+        // Initial sync
+        await syncDriveFiles(driveFolderId, dataDir);
+
+        // Poll every 5 minutes (only in local dev, Vercel will re-sync on each cold start)
+        if (process.env.NODE_ENV !== 'production') {
+            setInterval(() => {
+                syncDriveFiles(driveFolderId, dataDir);
+            }, 5 * 60 * 1000);
+        }
+    } else {
+        console.log("Drive Sync skipped: DRIVE_FOLDER_ID not set");
     }
-
-    // Initial sync
-    syncDriveFiles(driveFolderId, dataDir);
-
-    // Poll every 5 minutes (only in local dev, Vercel will re-sync on each cold start)
-    if (process.env.NODE_ENV !== 'production') {
-        setInterval(() => {
-            syncDriveFiles(driveFolderId, dataDir);
-        }, 5 * 60 * 1000);
-    }
-} else {
-    console.log("Drive Sync skipped: DRIVE_FOLDER_ID not set");
 }
+
+// Middleware to initialize Drive Sync on first request (for Vercel)
+app.use(async (req, res, next) => {
+    if (!driveSyncInitialized) {
+        await initializeDriveSync();
+    }
+    next();
+});
 
 // For local development
 if (process.env.NODE_ENV !== 'production') {
     const port = process.env.PORT || 3000;
     app.listen(port, () => {
         console.log(`Server running at http://localhost:${port}`);
+        // Initialize Drive Sync immediately in local dev
+        initializeDriveSync();
     });
 }
 
