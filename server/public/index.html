@@ -18,6 +18,40 @@
             color: #333;
         }
 
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            background-color: white;
+            border: 2px solid #dee2e6;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            background-color: #f8f9fa;
+        }
+
+        .tab.active {
+            background-color: #3498db;
+            color: white;
+            border-color: #3498db;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
         .file-card {
             background: white;
             padding: 20px;
@@ -26,24 +60,42 @@
             box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
         }
 
+        .file-card.read {
+            opacity: 0.7;
+        }
+
+        .file-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 10px;
+        }
+
         .file-name {
             font-weight: bold;
             font-size: 1.2em;
             color: #2c3e50;
+            flex: 1;
+        }
+
+        .read-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.9em;
+            color: #7f8c8d;
+        }
+
+        .read-checkbox input {
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
         }
 
         .timestamp {
             color: #7f8c8d;
             font-size: 0.9em;
             margin-bottom: 10px;
-        }
-
-        .section-title {
-            font-weight: 700;
-            font-size: 1.3em;
-            margin-top: 20px;
-            margin-bottom: 12px;
-            color: #2c3e50;
         }
 
         .content {
@@ -103,7 +155,45 @@
         }
 
         .collapsible-content.active {
+            max-height: 3000px;
+        }
+
+        .subtitle {
+            cursor: pointer;
+            font-weight: bold;
+            color: #34495e;
+            padding: 8px 10px;
+            margin: 8px 0;
+            background: #ecf0f1;
+            border-radius: 4px;
+            user-select: none;
+            transition: background-color 0.2s;
+        }
+
+        .subtitle:hover {
+            background-color: #d5dbdb;
+        }
+
+        .subtitle::before {
+            content: '▸ ';
+            display: inline-block;
+            transition: transform 0.2s;
+        }
+
+        .subtitle.active::before {
+            transform: rotate(90deg);
+        }
+
+        .subtitle-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+            padding-left: 20px;
+        }
+
+        .subtitle-content.active {
             max-height: 2000px;
+            padding-top: 10px;
         }
     </style>
 </head>
@@ -124,7 +214,10 @@
     </div>
 
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <h2 style="margin: 0; color: #2c3e50;">Processed Files & URLs</h2>
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('unread')">Unread</div>
+            <div class="tab" onclick="switchTab('archive')">Archive</div>
+        </div>
         <div style="display: flex; gap: 10px;">
             <button onclick="showDebugInfo()"
                 style="background-color: #7f8c8d; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
@@ -134,10 +227,12 @@
                 style="background-color: #8e44ad; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
                 Sync with Drive
             </button>
-            <button class="refresh-btn" onclick="fetchResults()">Refresh List</button>
+            <button class="refresh-btn" onclick="fetchResults()">Refresh</button>
         </div>
     </div>
-    <div id="results-container"></div>
+
+    <div id="unread-tab" class="tab-content active"></div>
+    <div id="archive-tab" class="tab-content"></div>
 
     <!-- Debug Modal -->
     <div id="debugModal"
@@ -154,6 +249,30 @@
     </div>
 
     <script>
+        let currentTab = 'unread';
+        let readFiles = JSON.parse(localStorage.getItem('readFiles') || '[]');
+
+        function switchTab(tab) {
+            currentTab = tab;
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+
+            event.target.classList.add('active');
+            document.getElementById(tab + '-tab').classList.add('active');
+        }
+
+        function toggleRead(filename, checkbox) {
+            if (checkbox.checked) {
+                if (!readFiles.includes(filename)) {
+                    readFiles.push(filename);
+                }
+            } else {
+                readFiles = readFiles.filter(f => f !== filename);
+            }
+            localStorage.setItem('readFiles', JSON.stringify(readFiles));
+            fetchResults();
+        }
+
         async function submitURL() {
             const urlInput = document.getElementById('urlInput');
             const statusDiv = document.getElementById('urlStatus');
@@ -180,7 +299,7 @@
                 if (data.success) {
                     statusDiv.textContent = 'URL processed successfully!';
                     urlInput.value = '';
-                    fetchResults(); // Refresh list immediately
+                    fetchResults();
                 } else {
                     statusDiv.textContent = 'Error: ' + data.message;
                 }
@@ -203,31 +322,88 @@
             content.classList.toggle('active');
         }
 
+        function toggleSubtitle(element) {
+            element.classList.toggle('active');
+            const content = element.nextElementSibling;
+            content.classList.toggle('active');
+        }
+
+        function parseAnalysisWithSubtitles(analysis) {
+            // Split by common subtitle patterns like "**Title:**", "## Title", "1. Title"
+            const lines = analysis.split('\n');
+            let html = '';
+            let currentSubtitle = null;
+            let currentContent = '';
+
+            lines.forEach(line => {
+                // Check for subtitle patterns (bold markdown or numbered)
+                if (line.match(/^\*\*[^*]+\*\*:?/) || line.match(/^##\s+/) || line.match(/^\d+\.\s*\*\*[^*]+\*\*/)) {
+                    // Save previous subtitle if exists
+                    if (currentSubtitle) {
+                        html += `<div class="subtitle" onclick="toggleSubtitle(this)">${currentSubtitle}</div>`;
+                        html += `<div class="subtitle-content"><div class="content">${currentContent.trim()}</div></div>`;
+                    }
+                    // Start new subtitle
+                    currentSubtitle = line.replace(/\*\*/g, '').replace(/^##\s+/, '').replace(/^\d+\.\s*/, '');
+                    currentContent = '';
+                } else {
+                    currentContent += line + '\n';
+                }
+            });
+
+            // Add last subtitle
+            if (currentSubtitle) {
+                html += `<div class="subtitle" onclick="toggleSubtitle(this)">${currentSubtitle}</div>`;
+                html += `<div class="subtitle-content"><div class="content">${currentContent.trim()}</div></div>`;
+            } else {
+                // No subtitles found, just show all content
+                html = `<div class="content">${analysis}</div>`;
+            }
+
+            return html;
+        }
+
         async function fetchResults() {
-            const container = document.getElementById('results-container');
+            const unreadContainer = document.getElementById('unread-tab');
+            const archiveContainer = document.getElementById('archive-tab');
+
             try {
                 const response = await fetch('/api/results');
                 const data = await response.json();
 
-                container.innerHTML = '';
+                unreadContainer.innerHTML = '';
+                archiveContainer.innerHTML = '';
+
                 if (data.length === 0) {
-                    container.innerHTML = '<p>No files processed yet. Add a PDF to the data directory.</p>';
+                    unreadContainer.innerHTML = '<p>No files processed yet. Add a PDF to your Drive folder.</p>';
                     return;
                 }
 
                 // Sort by timestamp descending
                 data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
+                let unreadCount = 0;
+                let archiveCount = 0;
+
                 data.forEach((file, index) => {
+                    const isRead = readFiles.includes(file.name);
                     const card = document.createElement('div');
-                    card.className = 'file-card';
+                    card.className = 'file-card' + (isRead ? ' read' : '');
+
                     card.innerHTML = `
-                        <div class="file-name">${file.name}</div>
+                        <div class="file-header">
+                            <div class="file-name">${file.name}</div>
+                            <label class="read-checkbox">
+                                <input type="checkbox" ${isRead ? 'checked' : ''} 
+                                       onchange="toggleRead('${file.name.replace(/'/g, "\\'")}', this)">
+                                <span>Mark as Read</span>
+                            </label>
+                        </div>
                         <div class="timestamp">Processed: ${new Date(file.timestamp).toLocaleString()}</div>
                         
                         <div class="collapsible" onclick="toggleCollapsible(this)">AI Analysis</div>
                         <div class="collapsible-content">
-                            <div class="content">${file.analysis}</div>
+                            ${parseAnalysisWithSubtitles(file.analysis)}
                         </div>
                         
                         <div class="collapsible" onclick="toggleCollapsible(this)">Text Preview</div>
@@ -235,11 +411,29 @@
                             <div class="content">${file.textPreview}</div>
                         </div>
                     `;
-                    container.appendChild(card);
+
+                    if (isRead) {
+                        archiveContainer.appendChild(card);
+                        archiveCount++;
+                    } else {
+                        unreadContainer.appendChild(card);
+                        unreadCount++;
+                    }
                 });
+
+                // Update tab labels with counts
+                document.querySelectorAll('.tab')[0].textContent = `Unread (${unreadCount})`;
+                document.querySelectorAll('.tab')[1].textContent = `Archive (${archiveCount})`;
+
+                if (unreadCount === 0) {
+                    unreadContainer.innerHTML = '<p>No unread files. Great job! 🎉</p>';
+                }
+                if (archiveCount === 0) {
+                    archiveContainer.innerHTML = '<p>No archived files yet.</p>';
+                }
             } catch (error) {
                 console.error('Error fetching results:', error);
-                container.innerHTML = '<p>Error loading results.</p>';
+                unreadContainer.innerHTML = '<p>Error loading results.</p>';
             }
         }
 
@@ -247,6 +441,7 @@
         fetchResults();
         // Poll every 5 seconds
         setInterval(fetchResults, 5000);
+
         async function syncDrive() {
             const syncBtn = document.getElementById('syncBtn');
             const originalText = syncBtn.textContent;
@@ -265,7 +460,7 @@
 
                 if (data.success) {
                     alert('Sync complete! Found ' + data.files.length + ' total files.');
-                    fetchResults(); // Refresh list
+                    fetchResults();
                 } else {
                     alert('Sync failed: ' + data.message);
                 }
@@ -310,30 +505,6 @@
                             <div><strong>Message:</strong> ${data.driveStatus.message}</div>
                             <div><strong>Files in Folder:</strong> ${data.driveStatus.files ? data.driveStatus.files.length : 0}</div>
                         </div>
-                    </div>
-
-                    ${data.driveStatus.globalFiles && data.driveStatus.globalFiles.length > 0 ? `
-                        <div style="background: #fff3cd; color: #856404; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
-                            <h3>⚠️ Diagnostic: Other Files Found</h3>
-                            <p>The app cannot see files in your configured folder (<strong>${data.envVars.DRIVE_FOLDER_ID}</strong>), but it CAN see these other files. You might be using the wrong Folder ID.</p>
-                            <ul>
-                                ${data.driveStatus.globalFiles.map(f => `<li><strong>${f.name}</strong> (ID: ${f.id}) - Parent: ${f.parents ? f.parents[0] : 'None'}</li>`).join('')}
-                            </ul>
-                        </div>
-                    ` : ''}
-
-                    <h3>File System (Local)</h3>
-                    <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px; max-height: 200px; overflow-y: auto;">
-                        <table style="width: 100%; border-collapse: collapse;">
-                            <tr style="text-align: left; border-bottom: 1px solid #ddd;"><th>Name</th><th>Size</th><th>Created</th></tr>
-                            ${data.filesInDataDir.map(f => `
-                                <tr>
-                                    <td>${f.name}</td>
-                                    <td>${f.size}</td>
-                                    <td>${new Date(f.created).toLocaleString()}</td>
-                                </tr>
-                            `).join('')}
-                        </table>
                     </div>
 
                     <h3>Server Logs (Last 50)</h3>
