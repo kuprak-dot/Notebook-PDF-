@@ -213,40 +213,22 @@
         <div id="urlStatus" style="margin-top: 10px; color: #7f8c8d;"></div>
     </div>
 
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <div style="margin-bottom: 20px;">
         <div class="tabs">
             <div class="tab active" onclick="switchTab('unread')">Unread</div>
             <div class="tab" onclick="switchTab('archive')">Archive</div>
         </div>
-        <div style="display: flex; gap: 10px;">
-            <button onclick="showDebugInfo()"
-                style="background-color: #7f8c8d; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
-                Debug Info
-            </button>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px;">
             <button id="syncBtn" onclick="syncDrive()"
-                style="background-color: #8e44ad; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+                style="background-color: #8e44ad; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; flex: 1; min-width: 140px;">
                 Sync with Drive
             </button>
-            <button class="refresh-btn" onclick="fetchResults()">Refresh</button>
+            <button class="refresh-btn" onclick="fetchResults()" style="flex: 1; min-width: 100px;">Refresh</button>
         </div>
     </div>
 
     <div id="unread-tab" class="tab-content active"></div>
     <div id="archive-tab" class="tab-content"></div>
-
-    <!-- Debug Modal -->
-    <div id="debugModal"
-        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000;">
-        <div
-            style="background: white; width: 90%; max-width: 800px; margin: 50px auto; padding: 20px; border-radius: 8px; max-height: 90vh; overflow-y: auto;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h2 style="margin: 0;">System Status Dashboard</h2>
-                <button onclick="document.getElementById('debugModal').style.display='none'"
-                    style="font-size: 1.5em; border: none; background: none; cursor: pointer;">&times;</button>
-            </div>
-            <div id="debugContent">Loading...</div>
-        </div>
-    </div>
 
     <script>
         let currentTab = 'unread';
@@ -495,50 +477,6 @@
                 syncBtn.disabled = false;
                 syncBtn.textContent = originalText;
                 syncBtn.style.opacity = '1';
-            }
-        }
-
-        async function showDebugInfo() {
-            const modal = document.getElementById('debugModal');
-            const content = document.getElementById('debugContent');
-            modal.style.display = 'block';
-            content.innerHTML = 'Loading diagnostic data...';
-
-            try {
-                const response = await fetch('/api/debug');
-                const data = await response.json();
-
-                let html = `
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-                        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px;">
-                            <h3>Environment</h3>
-                            <div><strong>Node Env:</strong> ${data.nodeEnv}</div>
-                            <div><strong>Service Account:</strong> ${data.envVars.clientEmail}</div>
-                            <div><strong>Creds Status:</strong> ${data.envVars.GOOGLE_CREDENTIALS_JSON}</div>
-                            <div><strong>Drive Folder:</strong> ${data.envVars.DRIVE_FOLDER_ID}</div>
-                        </div>
-                        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px;">
-                            <h3>Drive Connection</h3>
-                            <div><strong>Authenticated As:</strong> ${data.driveStatus.authenticatedEmail || 'Unknown'}</div>
-                            <div><strong>Write Test:</strong> 
-                                ${data.driveStatus.writeTest?.success
-                        ? '<span style="color:green">Passed</span>'
-                        : `<span style="color:red">Failed (${data.driveStatus.writeTest?.error || 'Unknown'})</span>`}
-                            </div>
-                            <div><strong>Status:</strong> ${data.driveStatus.success ? '<span style="color:green">Connected</span>' : '<span style="color:red">Failed</span>'}</div>
-                            <div><strong>Message:</strong> ${data.driveStatus.message}</div>
-                            <div><strong>Files in Folder:</strong> ${data.driveStatus.files ? data.driveStatus.files.length : 0}</div>
-                        </div>
-                    </div>
-
-                    <h3>Server Logs (Last 50)</h3>
-                    <div style="background: #2c3e50; color: #ecf0f1; padding: 15px; border-radius: 5px; height: 300px; overflow-y: auto; font-family: monospace; font-size: 0.9em;">
-                        ${data.logs.map(log => `<div>${log}</div>`).join('')}
-                    </div>
-                `;
-                content.innerHTML = html;
-            } catch (error) {
-                content.innerHTML = '<p style="color: red">Error fetching debug info: ' + error.message + '</p>';
             }
         }
     </script>
