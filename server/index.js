@@ -55,14 +55,15 @@ app.post('/api/sync', async (req, res) => {
     log("Manual Sync requested via API");
     try {
         const driveFolderId = process.env.DRIVE_FOLDER_ID ? process.env.DRIVE_FOLDER_ID.trim() : null;
-        if (!driveFolderId) {
-            return res.status(500).json({ success: false, message: 'Drive Folder ID not configured' });
+
+        // 1. Sync files from Drive if configured
+        if (driveFolderId) {
+            await syncDriveFiles(driveFolderId, DATA_DIR, log);
+        } else {
+            log("Skipping Drive sync (DRIVE_FOLDER_ID not configured), processing local files only");
         }
 
-        // 1. Sync files
-        await syncDriveFiles(driveFolderId, DATA_DIR, log);
-
-        // 2. Process any new PDFs
+        // 2. Process any PDFs in DATA_DIR (local or synced)
         const files = fs.readdirSync(DATA_DIR);
         for (const file of files) {
             if (file.toLowerCase().endsWith('.pdf')) {
@@ -220,21 +221,6 @@ app.get('/api/debug', async (req, res) => {
     });
 });
 
-// API to process a URL
-app.post('/api/process-url', async (req, res) => {
-    const { url } = req.body;
-    if (!url) {
-        return res.status(400).json({ success: false, message: 'URL is required' });
-    }
-
-    try {
-        await processURL(url);
-        res.json({ success: true, message: 'URL processed successfully' });
-    } catch (error) {
-        console.error('Error processing URL:', error);
-        res.status(500).json({ success: false, message: 'Error processing URL: ' + error.message });
-    }
-});
 
 // API to save analysis to Google Drive
 app.post('/api/save-to-drive', async (req, res) => {
@@ -350,85 +336,6 @@ ${text.substring(0, 20000)}
 
     } catch (err) {
         console.error(`Error processing ${fileName}:`, err);
-    }
-}
-
-// Function to process URL
-async function processURL(url) {
-    log(`Processing URL: ${url}...`);
-    const fileName = url; // Use URL as the key/filename
-
-    try {
-        const response = await axios.get(url, {
-            timeout: 15000, // 15 second timeout
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.9,tr;q=0.8',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Cache-Control': 'max-age=0'
-            }
-        });
-        const html = response.data;
-        const $ = cheerio.load(html);
-
-        // Remove scripts, styles, and other non-content elements
-        $('script').remove();
-        $('style').remove();
-        $('nav').remove();
-        $('footer').remove();
-        $('header').remove();
-
-        // Extract text
-        const text = $('body').text().replace(/\s+/g, ' ').trim();
-
-        // Analyze with Gemini
-        let analysis = "Analysis pending or failed.";
-        if (process.env.GEMINI_API_KEY) {
-            try {
-                const prompt = `
-Analyze the following text from a website (${url}). Provide a comprehensive and detailed analysis.
-
-**Output Structure:**
-
-1.  **Executive Summary**: A concise paragraph summarizing the main topic and purpose of the web page.
-2.  **Detailed Key Points**: A bulleted list of the most important information, facts, or arguments presented. Be specific.
-3.  **Action Items & Deadlines**: Extract any tasks, calls to action, or specific dates/deadlines mentioned. If none, state "None identified."
-4.  **Technical/Medical Terminology**: If the text contains specialized terms (medical, legal, technical), list and briefly define them based on context.
-5.  **Unresolved Questions**: Identify any questions raised in the text that remain unanswered or require follow-up.
-
-**Text Content:**
-${text.substring(0, 20000)}
-`;
-                const result = await model.generateContent(prompt);
-                const response = await result.response;
-                analysis = response.text();
-            } catch (aiError) {
-                console.error("AI Error:", aiError);
-                analysis = `Error generating AI analysis: ${aiError.message}`;
-            }
-        } else {
-            analysis = "API Key missing. Please add GEMINI_API_KEY to .env file.";
-        }
-
-        processedFiles[fileName] = {
-            name: fileName,
-            timestamp: new Date(),
-            textPreview: text.substring(0, 200) + "...",
-            analysis: analysis,
-            type: 'url'
-        };
-        log(`Finished processing URL: ${url}`);
-
-    } catch (err) {
-        console.error(`Error processing URL ${url}:`, err);
-        throw err;
     }
 }
 

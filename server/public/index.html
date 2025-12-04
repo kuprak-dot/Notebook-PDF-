@@ -260,22 +260,103 @@
         .clear-btn:hover {
             background-color: #c0392b;
         }
+
+        /* Notes Modal */
+        .notes-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .notes-modal-overlay.active {
+            display: flex;
+        }
+
+        .notes-modal {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        .notes-modal h2 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+
+        .notes-textarea {
+            width: 100%;
+            min-height: 200px;
+            padding: 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            font-family: inherit;
+            font-size: 1em;
+            resize: vertical;
+        }
+
+        .notes-modal-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            justify-content: flex-end;
+        }
+
+        .notes-btn {
+            padding: 6px 12px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            background: white;
+            transition: all 0.2s;
+        }
+
+        .notes-badge {
+            display: inline-block;
+            background-color: #3498db;
+            color: white;
+            font-size: 0.7em;
+            padding: 2px 6px;
+            border-radius: 10px;
+            margin-left: 5px;
+            font-weight: bold;
+        }
+
+        .clear-btn:hover {
+            background-color: #c0392b;
+        }
     </style>
 </head>
 
 <body>
     <h1>Notebook PDF Analyzer</h1>
 
-    <div
-        style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px;">
-        <h2 style="margin-top: 0; color: #2c3e50;">Analyze Website URL</h2>
-        <div style="display: flex; gap: 10px;">
-            <input type="url" id="urlInput" placeholder="Enter website URL (e.g., https://example.com/article)"
-                style="flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
-            <button onclick="submitURL()"
-                style="background-color: #27ae60; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer;">Analyze</button>
+    <!-- Notes Modal -->
+    <div id="notesModal" class="notes-modal-overlay" onclick="closeNotesModal(event)">
+        <div class="notes-modal" onclick="event.stopPropagation()">
+            <h2>📝 Notes for <span id="notesFileName"></span></h2>
+            <textarea id="notesTextarea" class="notes-textarea"
+                placeholder="Add your personal notes or comments here..."></textarea>
+            <div class="notes-modal-buttons">
+                <button class="notes-btn" onclick="deleteNotes()" style="background-color: #e74c3c; color: white;">🗑️
+                    Delete</button>
+                <button class="notes-btn" onclick="closeNotesModal()">Cancel</button>
+                <button class="notes-btn" onclick="saveNotes()" style="background-color: #3498db; color: white;">💾
+                    Save</button>
+            </div>
         </div>
-        <div id="urlStatus" style="margin-top: 10px; color: #7f8c8d;"></div>
     </div>
 
     <div
@@ -309,6 +390,8 @@
         let readFiles = JSON.parse(localStorage.getItem('readFiles') || '[]');
         let highlightingEnabled = {}; // Track which files have highlighting enabled
         let highlights = JSON.parse(localStorage.getItem('pdfHighlights') || '{}'); // { fileName: [{ text, html }] }
+        let pdfNotes = JSON.parse(localStorage.getItem('pdfNotes') || '{}'); // { fileName: noteText }
+        let currentNotesFileName = null;
 
         // Font size management
         function updateFontSize(value) {
@@ -347,47 +430,43 @@
             fetchResults();
         }
 
-        async function submitURL() {
-            const urlInput = document.getElementById('urlInput');
-            const statusDiv = document.getElementById('urlStatus');
-            const url = urlInput.value.trim();
+        // Notes functions
+        function openNotesModal(fileName) {
+            currentNotesFileName = fileName;
+            document.getElementById('notesFileName').textContent = fileName;
+            document.getElementById('notesTextarea').value = pdfNotes[fileName] || '';
+            document.getElementById('notesModal').classList.add('active');
+        }
 
-            if (!url) {
-                alert('Please enter a URL');
-                return;
+        function closeNotesModal(event) {
+            if (event && event.target !== event.currentTarget) return;
+            document.getElementById('notesModal').classList.remove('active');
+            currentNotesFileName = null;
+        }
+
+        function saveNotes() {
+            if (!currentNotesFileName) return;
+            const noteText = document.getElementById('notesTextarea').value.trim();
+
+            if (noteText) {
+                pdfNotes[currentNotesFileName] = noteText;
+            } else {
+                delete pdfNotes[currentNotesFileName];
             }
 
-            statusDiv.textContent = 'Processing URL... This may take a moment.';
-            urlInput.disabled = true;
+            localStorage.setItem('pdfNotes', JSON.stringify(pdfNotes));
+            closeNotesModal();
+            fetchResults(); // Refresh to update badge
+        }
 
-            try {
-                const response = await fetch('/api/process-url', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ url })
-                });
-                const data = await response.json();
+        function deleteNotes() {
+            if (!currentNotesFileName) return;
+            if (!confirm('Delete notes for this PDF?')) return;
 
-                if (data.success) {
-                    statusDiv.textContent = 'URL processed successfully!';
-                    urlInput.value = '';
-                    fetchResults();
-                } else {
-                    statusDiv.textContent = 'Error: ' + data.message;
-                }
-            } catch (error) {
-                console.error('Error submitting URL:', error);
-                statusDiv.textContent = 'Error submitting URL';
-            } finally {
-                urlInput.disabled = false;
-                setTimeout(() => {
-                    if (statusDiv.textContent === 'URL processed successfully!') {
-                        statusDiv.textContent = '';
-                    }
-                }, 3000);
-            }
+            delete pdfNotes[currentNotesFileName];
+            localStorage.setItem('pdfNotes', JSON.stringify(pdfNotes));
+            closeNotesModal();
+            fetchResults();
         }
 
         function toggleCollapsible(element) {
@@ -625,6 +704,7 @@
                         <div class="highlight-controls">
                             <button class="highlight-btn" onclick="toggleHighlighting('${file.name.replace(/'/g, "\\'")}', this)">🖍️ Enable Highlighting</button>
                             <button class="highlight-btn clear-btn" onclick="clearHighlights('${file.name.replace(/'/g, "\\'")}')" style="background-color: #95a5a6; color: white; border-color: #95a5a6;">🗑️ Clear Highlights</button>
+                            <button class="highlight-btn" onclick="openNotesModal('${file.name.replace(/'/g, "\\'")}')" style="background-color: #f39c12; color: white; border-color: #f39c12;">📝 Notes${pdfNotes[file.name] ? '<span class="notes-badge">✓</span>' : ''}</button>
                         </div>
                         
                         <div class="collapsible" onclick="toggleCollapsible(this)">AI Analysis</div>
