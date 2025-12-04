@@ -6,12 +6,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Notebook PDF Analyzer</title>
     <style>
+        :root {
+            --content-font-size: 1.05em;
+            --title-font-size: 1.2em;
+        }
+
         body {
             font-family: sans-serif;
             max-width: 800px;
             margin: 0 auto;
             padding: 20px;
             background-color: #f4f4f9;
+        }
+
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
         }
 
         h1 {
@@ -73,7 +84,7 @@
 
         .file-name {
             font-weight: bold;
-            font-size: 1.2em;
+            font-size: var(--title-font-size);
             color: #2c3e50;
             flex: 1;
         }
@@ -105,7 +116,7 @@
             border-radius: 4px;
             border: 1px solid #e9ecef;
             line-height: 1.8;
-            font-size: 1.05em;
+            font-size: var(--content-font-size);
         }
 
         .refresh-btn {
@@ -213,6 +224,16 @@
         <div id="urlStatus" style="margin-top: 10px; color: #7f8c8d;"></div>
     </div>
 
+    <div
+        style="background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 20px;">
+        <label style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-weight: 500; min-width: 80px;">Font Size:</span>
+            <input type="range" id="fontSizeSlider" min="0.8" max="1.5" step="0.1" value="1.05" style="flex: 1;"
+                onchange="updateFontSize(this.value)">
+            <span id="fontSizeLabel" style="min-width: 45px; text-align: right;">100%</span>
+        </label>
+    </div>
+
     <div style="margin-bottom: 20px;">
         <div class="tabs">
             <div class="tab active" onclick="switchTab('unread')">Unread</div>
@@ -233,6 +254,22 @@
     <script>
         let currentTab = 'unread';
         let readFiles = JSON.parse(localStorage.getItem('readFiles') || '[]');
+
+        // Font size management
+        function updateFontSize(value) {
+            const percentage = Math.round((value / 1.05) * 100);
+            document.getElementById('fontSizeLabel').textContent = percentage + '%';
+            document.documentElement.style.setProperty('--content-font-size', value + 'em');
+            document.documentElement.style.setProperty('--title-font-size', (value * 1.14) + 'em');
+            localStorage.setItem('fontSize', value);
+        }
+
+        // Load saved font size
+        const savedFontSize = localStorage.getItem('fontSize');
+        if (savedFontSize) {
+            document.getElementById('fontSizeSlider').value = savedFontSize;
+            updateFontSize(savedFontSize);
+        }
 
         function switchTab(tab) {
             currentTab = tab;
