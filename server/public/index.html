@@ -68,6 +68,43 @@
         .refresh-btn:hover {
             background-color: #2980b9;
         }
+
+        .collapsible {
+            cursor: pointer;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px 15px;
+            border-radius: 4px;
+            margin-top: 10px;
+            user-select: none;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+
+        .collapsible:hover {
+            background-color: #e9ecef;
+        }
+
+        .collapsible::before {
+            content: '▶ ';
+            display: inline-block;
+            transition: transform 0.2s;
+        }
+
+        .collapsible.active::before {
+            transform: rotate(90deg);
+        }
+
+        .collapsible-content {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+            margin-top: 5px;
+        }
+
+        .collapsible-content.active {
+            max-height: 2000px;
+        }
     </style>
 </head>
 
@@ -160,52 +197,10 @@
             }
         }
 
-        async function deleteFile(filename) {
-            if (!confirm(`Are you sure you want to delete "${filename}" from memory?`)) {
-                return;
-            }
-
-            try {
-                const response = await fetch(`/api/results/${encodeURIComponent(filename)}`, {
-                    method: 'DELETE'
-                });
-                const data = await response.json();
-
-                if (data.success) {
-                    fetchResults(); // Refresh the list
-                } else {
-                    alert('Error deleting file: ' + data.message);
-                }
-            } catch (error) {
-                console.error('Error deleting file:', error);
-                alert('Error deleting file');
-            }
-        }
-
-        async function saveToDrive(filename) {
-            if (!confirm(`Save analysis for "${filename}" to Google Drive?`)) {
-                return;
-            }
-
-            try {
-                const response = await fetch('/api/save-to-drive', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ filename })
-                });
-                const data = await response.json();
-
-                if (data.success) {
-                    alert('Successfully saved to Google Drive: ' + data.driveFile.name);
-                } else {
-                    alert('Error saving to Drive: ' + data.message);
-                }
-            } catch (error) {
-                console.error('Error saving to Drive:', error);
-                alert('Error saving to Drive');
-            }
+        function toggleCollapsible(element) {
+            element.classList.toggle('active');
+            const content = element.nextElementSibling;
+            content.classList.toggle('active');
         }
 
         async function fetchResults() {
@@ -223,32 +218,22 @@
                 // Sort by timestamp descending
                 data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-                data.forEach(file => {
+                data.forEach((file, index) => {
                     const card = document.createElement('div');
                     card.className = 'file-card';
                     card.innerHTML = `
-                        <div style="display: flex; justify-content: space-between; align-items: start;">
-                            <div style="flex: 1;">
-                                <div class="file-name">${file.name}</div>
-                                <div class="timestamp">Processed: ${new Date(file.timestamp).toLocaleString()}</div>
-                            </div>
-                            <div style="display: flex; gap: 10px;">
-                                <button onclick="saveToDrive('${file.name.replace(/'/g, "\\'")}')" 
-                                        style="background-color: #27ae60; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
-                                    Save to Drive
-                                </button>
-                                <button onclick="deleteFile('${file.name.replace(/'/g, "\\'")}')" 
-                                        style="background-color: #e74c3c; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-size: 0.9em;">
-                                    Delete
-                                </button>
-                            </div>
+                        <div class="file-name">${file.name}</div>
+                        <div class="timestamp">Processed: ${new Date(file.timestamp).toLocaleString()}</div>
+                        
+                        <div class="collapsible" onclick="toggleCollapsible(this)">AI Analysis</div>
+                        <div class="collapsible-content">
+                            <div class="content">${file.analysis}</div>
                         </div>
                         
-                        <div class="section-title">AI Analysis</div>
-                        <div class="content">${file.analysis}</div>
-                        
-                        <div class="section-title">Text Preview</div>
-                        <div class="content">${file.textPreview}</div>
+                        <div class="collapsible" onclick="toggleCollapsible(this)">Text Preview</div>
+                        <div class="collapsible-content">
+                            <div class="content">${file.textPreview}</div>
+                        </div>
                     `;
                     container.appendChild(card);
                 });
