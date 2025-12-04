@@ -2,8 +2,8 @@ const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
 
-// Changed from 'drive.file' to 'drive.readonly' to allow access to all shared files
-const SCOPES = ['https://www.googleapis.com/auth/drive.readonly'];
+// Changed from 'drive.file' to 'drive' to allow full read/write access to shared files
+const SCOPES = ['https://www.googleapis.com/auth/drive'];
 const CREDENTIALS_PATH = path.join(__dirname, '../google-credentials.json');
 const DOWNLOAD_RECORD_PATH = path.join(__dirname, 'downloaded_files.json');
 
