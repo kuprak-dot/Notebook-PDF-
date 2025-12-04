@@ -83,7 +83,12 @@ app.post('/api/sync', async (req, res) => {
 
 // API to get processed files
 app.get('/api/results', (req, res) => {
-    res.json(Object.values(processedFiles));
+    const driveFolderId = process.env.DRIVE_FOLDER_ID ? process.env.DRIVE_FOLDER_ID.trim() : '';
+    const results = Object.values(processedFiles).map(file => ({
+        ...file,
+        driveFolderId: driveFolderId
+    }));
+    res.json(results);
 });
 
 // API to delete a processed file

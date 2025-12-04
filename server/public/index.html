@@ -423,11 +423,17 @@
                     card.innerHTML = `
                         <div class="file-header">
                             <div class="file-name">${file.name}</div>
-                            <label class="read-checkbox">
-                                <input type="checkbox" ${isRead ? 'checked' : ''} 
-                                       onchange="toggleRead('${file.name.replace(/'/g, "\\'")}', this)">
-                                <span>Mark as Read</span>
-                            </label>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <button onclick="window.open('https://drive.google.com/drive/folders/${file.driveFolderId || ''}', '_blank')" 
+                                    style="background-color: #4285f4; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.85em; white-space: nowrap;">
+                                    📁 View on Drive
+                                </button>
+                                <label class="read-checkbox">
+                                    <input type="checkbox" ${isRead ? 'checked' : ''} 
+                                           onchange="toggleRead('${file.name.replace(/'/g, "\\'")}', this)">
+                                    <span>Mark as Read</span>
+                                </label>
+                            </div>
                         </div>
                         <div class="timestamp">Processed: ${new Date(file.timestamp).toLocaleString()}</div>
                         
