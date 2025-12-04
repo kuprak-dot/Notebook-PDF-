@@ -30,7 +30,7 @@ if (!fs.existsSync(DATA_DIR)) {
 let processedFiles = {};
 let driveSyncInitialized = false; // Flag to track sync status
 
-const { syncDriveFiles, uploadSummaryToDrive, uploadFileToDrive, deleteFileFromDrive } = require('./driveSync');
+const { syncDriveFiles, uploadSummaryToDrive, uploadFileToDrive, deleteFileFromDrive, checkDriveAccess } = require('./driveSync');
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || 'API_KEY_MISSING');
@@ -142,12 +142,21 @@ app.get('/api/debug', async (req, res) => {
     let filesInDataDir = [];
     try {
         if (fs.existsSync(DATA_DIR)) {
-            filesInDataDir = fs.readdirSync(DATA_DIR);
+            const files = fs.readdirSync(DATA_DIR);
+            filesInDataDir = files.map(file => {
+                const stat = fs.statSync(path.join(DATA_DIR, file));
+                return {
+                    name: file,
+                    size: stat.size,
+                    created: stat.birthtime,
+                    modified: stat.mtime
+                };
+            });
         } else {
-            filesInDataDir = ['DATA_DIR does not exist'];
+            filesInDataDir = [{ name: 'DATA_DIR does not exist', error: true }];
         }
     } catch (e) {
-        filesInDataDir = ['Error reading DATA_DIR: ' + e.message];
+        filesInDataDir = [{ name: 'Error reading DATA_DIR', error: e.message }];
     }
 
     let credentialsStatus = 'Missing';
@@ -158,11 +167,33 @@ app.get('/api/debug', async (req, res) => {
         try {
             const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
             clientEmail = creds.client_email;
-            credentialsStatus = 'Valid JSON';
+            credentialsStatus = 'Valid JSON (Env Var)';
         } catch (e) {
-            credentialsStatus = 'Invalid JSON';
+            credentialsStatus = 'Invalid JSON (Env Var)';
             credentialsError = e.message;
         }
+    } else {
+        // Check local file
+        const localCredsPath = path.join(__dirname, '../google-credentials.json');
+        if (fs.existsSync(localCredsPath)) {
+            try {
+                const creds = JSON.parse(fs.readFileSync(localCredsPath, 'utf8'));
+                clientEmail = creds.client_email;
+                credentialsStatus = 'Valid JSON (Local File)';
+            } catch (e) {
+                credentialsStatus = 'Invalid JSON (Local File)';
+                credentialsError = e.message;
+            }
+        }
+    }
+
+    // Check Drive Access
+    const driveFolderId = process.env.DRIVE_FOLDER_ID ? process.env.DRIVE_FOLDER_ID.trim() : null;
+    let driveStatus = { success: false, message: 'Not checked' };
+    if (driveFolderId) {
+        driveStatus = await checkDriveAccess(driveFolderId, log);
+    } else {
+        driveStatus = { success: false, message: 'DRIVE_FOLDER_ID not set' };
     }
 
     res.json({
@@ -172,6 +203,7 @@ app.get('/api/debug', async (req, res) => {
         processedFilesCount: Object.keys(processedFiles).length,
         processedFileNames: Object.keys(processedFiles),
         driveSyncInitialized: driveSyncInitialized,
+        driveStatus: driveStatus,
         envVars: {
             GEMINI_API_KEY: !!process.env.GEMINI_API_KEY ? 'Present' : 'Missing',
             DRIVE_FOLDER_ID: process.env.DRIVE_FOLDER_ID ? process.env.DRIVE_FOLDER_ID.trim() : 'Missing',

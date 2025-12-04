@@ -2,11 +2,12 @@ const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
 
-const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
+// Changed from 'drive.file' to 'drive.readonly' to allow access to all shared files
+const SCOPES = ['https://www.googleapis.com/auth/drive.readonly'];
 const CREDENTIALS_PATH = path.join(__dirname, '../google-credentials.json');
 const DOWNLOAD_RECORD_PATH = path.join(__dirname, 'downloaded_files.json');
 
-async function authenticate() {
+async function authenticate(logFn = console.log) {
     let authOptions = {
         scopes: SCOPES,
     };
@@ -17,15 +18,23 @@ async function authenticate() {
             const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON);
             authOptions.credentials = credentials;
         } catch (error) {
-            console.error("Error parsing GOOGLE_CREDENTIALS_JSON:", error);
+            logFn(`[Auth Error] Error parsing GOOGLE_CREDENTIALS_JSON: ${error.message}`);
         }
     } else {
         // Local Development: Credentials from file
         authOptions.keyFile = CREDENTIALS_PATH;
     }
 
-    const auth = new google.auth.GoogleAuth(authOptions);
-    return auth.getClient();
+    try {
+        const auth = new google.auth.GoogleAuth(authOptions);
+        const client = await auth.getClient();
+        logFn(`[Auth Debug] Client Email: ${client.email}`);
+        logFn(`[Auth Debug] Scopes: ${client.scopes}`);
+        return client;
+    } catch (error) {
+        logFn(`[Auth Error] Failed to create client: ${error.message}`);
+        throw error;
+    }
 }
 
 async function downloadFile(drive, fileId, destPath) {
@@ -290,4 +299,96 @@ async function deleteFileFromDrive(folderIdRaw, fileName, logFn = console.log) {
     }
 }
 
-module.exports = { syncDriveFiles, uploadSummaryToDrive, uploadFileToDrive, deleteFileFromDrive };
+async function checkDriveAccess(folderIdRaw, logFn = console.log) {
+    const folderId = folderIdRaw ? folderIdRaw.trim() : null;
+    const result = {
+        success: false,
+        message: '',
+        files: [],
+        folderId: folderId
+    };
+
+    if (!folderId) {
+        result.message = 'No Folder ID provided';
+        return result;
+    }
+
+    try {
+        logFn(`[Diagnostic] Authenticating...`);
+        const authClient = await authenticate(logFn);
+        const drive = google.drive({ version: 'v3', auth: authClient });
+
+        // Verify Identity
+        result.authenticatedEmail = authClient.email;
+        logFn(`[Diagnostic] Authenticated as: ${authClient.email}`);
+
+        // Test Write Capability (Root)
+        try {
+            logFn(`[Diagnostic] Attempting write test...`);
+            const testFile = await drive.files.create({
+                requestBody: {
+                    name: 'connectivity_test.txt',
+                    mimeType: 'text/plain'
+                },
+                media: {
+                    mimeType: 'text/plain',
+                    body: 'Hello from Notebook PDF App'
+                },
+                fields: 'id'
+            });
+            result.writeTest = { success: true, fileId: testFile.data.id };
+            logFn(`[Diagnostic] Write test passed. File ID: ${testFile.data.id}`);
+            // Clean up
+            await drive.files.delete({ fileId: testFile.data.id });
+        } catch (writeErr) {
+            result.writeTest = { success: false, error: writeErr.message };
+            logFn(`[Diagnostic] Write test failed: ${writeErr.message}`);
+        }
+
+        // List files in the folder
+        logFn(`[Diagnostic] Listing files in folder ${folderId}...`);
+        const res = await drive.files.list({
+            q: `'${folderId}' in parents and trashed = false`,
+            fields: 'files(id, name, mimeType, size, modifiedTime, parents)',
+            pageSize: 20,
+            supportsAllDrives: true,
+            includeItemsFromAllDrives: true
+        });
+
+        result.files = res.data.files;
+
+        if (result.files.length > 0) {
+            result.success = true;
+            result.message = `Successfully accessed Drive. Found ${res.data.files.length} files in target folder.`;
+        } else {
+            // Diagnostic: Check GLOBAL visibility
+            const globalRes = await drive.files.list({
+                q: "trashed = false",
+                fields: 'files(id, name, mimeType, parents)',
+                pageSize: 10,
+                supportsAllDrives: true,
+                includeItemsFromAllDrives: true
+            });
+
+            result.globalFiles = globalRes.data.files;
+
+            if (result.globalFiles.length > 0) {
+                result.success = false; // Still failed to find files in TARGET, but we found others
+                result.message = `Target folder is empty, BUT we found ${result.globalFiles.length} other files. Possible Folder ID mismatch.`;
+            } else {
+                result.success = false;
+                result.message = `No files found in target folder OR globally. Service Account has NO access.`;
+            }
+        }
+
+    } catch (error) {
+        result.message = `Error accessing Drive: ${error.message}`;
+        if (error.response) {
+            result.details = error.response.data;
+        }
+    }
+
+    return result;
+}
+
+module.exports = { syncDriveFiles, uploadSummaryToDrive, uploadFileToDrive, deleteFileFromDrive, checkDriveAccess };
