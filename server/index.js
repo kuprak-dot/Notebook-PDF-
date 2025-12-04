@@ -50,6 +50,37 @@ app.use(async (req, res, next) => {
     next();
 });
 
+// API to manually trigger Drive Sync
+app.post('/api/sync', async (req, res) => {
+    log("Manual Sync requested via API");
+    try {
+        const driveFolderId = process.env.DRIVE_FOLDER_ID ? process.env.DRIVE_FOLDER_ID.trim() : null;
+        if (!driveFolderId) {
+            return res.status(500).json({ success: false, message: 'Drive Folder ID not configured' });
+        }
+
+        // 1. Sync files
+        await syncDriveFiles(driveFolderId, DATA_DIR, log);
+
+        // 2. Process any new PDFs
+        const files = fs.readdirSync(DATA_DIR);
+        for (const file of files) {
+            if (file.toLowerCase().endsWith('.pdf')) {
+                await processPDF(path.join(DATA_DIR, file));
+            }
+        }
+
+        res.json({
+            success: true,
+            message: 'Sync complete',
+            files: Object.values(processedFiles)
+        });
+    } catch (error) {
+        console.error('Error during manual sync:', error);
+        res.status(500).json({ success: false, message: 'Sync failed: ' + error.message });
+    }
+});
+
 // API to get processed files
 app.get('/api/results', (req, res) => {
     res.json(Object.values(processedFiles));

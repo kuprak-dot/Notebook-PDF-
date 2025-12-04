@@ -88,7 +88,13 @@
 
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
         <h2 style="margin: 0; color: #2c3e50;">Processed Files & URLs</h2>
-        <button class="refresh-btn" onclick="fetchResults()">Refresh Results</button>
+        <div style="display: flex; gap: 10px;">
+            <button id="syncBtn" onclick="syncDrive()"
+                style="background-color: #8e44ad; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">
+                Sync with Drive
+            </button>
+            <button class="refresh-btn" onclick="fetchResults()">Refresh List</button>
+        </div>
     </div>
     <div id="results-container"></div>
 
@@ -238,6 +244,37 @@
         fetchResults();
         // Poll every 5 seconds
         setInterval(fetchResults, 5000);
+        async function syncDrive() {
+            const syncBtn = document.getElementById('syncBtn');
+            const originalText = syncBtn.textContent;
+
+            if (!confirm('This will check Google Drive for new files and process them. It may take a few seconds. Continue?')) {
+                return;
+            }
+
+            syncBtn.disabled = true;
+            syncBtn.textContent = 'Syncing...';
+            syncBtn.style.opacity = '0.7';
+
+            try {
+                const response = await fetch('/api/sync', { method: 'POST' });
+                const data = await response.json();
+
+                if (data.success) {
+                    alert('Sync complete! Found ' + data.files.length + ' total files.');
+                    fetchResults(); // Refresh list
+                } else {
+                    alert('Sync failed: ' + data.message);
+                }
+            } catch (error) {
+                console.error('Error syncing:', error);
+                alert('Error syncing with Drive');
+            } finally {
+                syncBtn.disabled = false;
+                syncBtn.textContent = originalText;
+                syncBtn.style.opacity = '1';
+            }
+        }
     </script>
 </body>
 
