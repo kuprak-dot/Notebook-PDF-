@@ -367,6 +367,17 @@
             const unreadContainer = document.getElementById('unread-tab');
             const archiveContainer = document.getElementById('archive-tab');
 
+            // Save current expanded state before re-rendering
+            const expandedState = {};
+            document.querySelectorAll('.collapsible.active, .subtitle.active').forEach(el => {
+                const card = el.closest('.file-card');
+                if (card) {
+                    const fileName = card.querySelector('.file-name').textContent;
+                    if (!expandedState[fileName]) expandedState[fileName] = [];
+                    expandedState[fileName].push(el.textContent.trim());
+                }
+            });
+
             try {
                 const response = await fetch('/api/results');
                 const data = await response.json();
@@ -418,6 +429,19 @@
                     } else {
                         unreadContainer.appendChild(card);
                         unreadCount++;
+                    }
+
+                    // Restore expanded state after appending
+                    if (expandedState[file.name]) {
+                        expandedState[file.name].forEach(sectionTitle => {
+                            const collapsibles = card.querySelectorAll('.collapsible, .subtitle');
+                            collapsibles.forEach(el => {
+                                if (el.textContent.trim() === sectionTitle) {
+                                    el.classList.add('active');
+                                    el.nextElementSibling.classList.add('active');
+                                }
+                            });
+                        });
                     }
                 });
 
