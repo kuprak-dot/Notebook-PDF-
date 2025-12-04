@@ -206,6 +206,60 @@
             max-height: 2000px;
             padding-top: 10px;
         }
+
+        /* Highlighting styles */
+        .highlight {
+            background-color: rgba(255, 255, 0, 0.4);
+            border-radius: 2px;
+            padding: 0 2px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .highlight:hover {
+            background-color: rgba(255, 255, 0, 0.6);
+        }
+
+        .highlight-controls {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+
+        .highlight-btn {
+            padding: 6px 12px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.85em;
+            transition: all 0.2s;
+            background: white;
+        }
+
+        .highlight-btn.active {
+            background-color: #fff59d;
+            border-color: #fdd835;
+            font-weight: bold;
+        }
+
+        .highlight-btn:hover {
+            background-color: #f8f9fa;
+        }
+
+        .highlight-btn.active:hover {
+            background-color: #ffeb3b;
+        }
+
+        .clear-btn {
+            background-color: #e74c3c;
+            color: white;
+            border-color: #e74c3c;
+        }
+
+        .clear-btn:hover {
+            background-color: #c0392b;
+        }
     </style>
 </head>
 
@@ -253,6 +307,8 @@
     <script>
         let currentTab = 'unread';
         let readFiles = JSON.parse(localStorage.getItem('readFiles') || '[]');
+        let highlightingEnabled = {}; // Track which files have highlighting enabled
+        let highlights = JSON.parse(localStorage.getItem('pdfHighlights') || '{}'); // { fileName: [{ text, html }] }
 
         // Font size management
         function updateFontSize(value) {
@@ -346,6 +402,136 @@
             content.classList.toggle('active');
         }
 
+        // Highlighting functions
+        function toggleHighlighting(fileName, button) {
+            highlightingEnabled[fileName] = !highlightingEnabled[fileName];
+            button.classList.toggle('active');
+
+            if (highlightingEnabled[fileName]) {
+                button.textContent = '🖍️ Highlighting ON';
+            } else {
+                button.textContent = '🖍️ Enable Highlighting';
+            }
+        }
+
+        function setupHighlighting(fileName, card) {
+            const contentDivs = card.querySelectorAll('.content');
+
+            contentDivs.forEach(contentDiv => {
+                // Load existing highlights
+                loadHighlights(fileName, contentDiv);
+
+                // Add mouseup listener for new highlights
+                contentDiv.addEventListener('mouseup', function () {
+                    if (!highlightingEnabled[fileName]) return;
+
+                    const selection = window.getSelection();
+                    const selectedText = selection.toString().trim();
+
+                    if (selectedText.length > 0) {
+                        const range = selection.getRangeAt(0);
+
+                        // Check if selection is within this content div
+                        if (contentDiv.contains(range.commonAncestorContainer)) {
+                            // Create highlight span
+                            const highlightSpan = document.createElement('span');
+                            highlightSpan.className = 'highlight';
+                            highlightSpan.title = 'Click to remove highlight';
+
+                            try {
+                                range.surroundContents(highlightSpan);
+
+                                // Save highlight
+                                saveHighlight(fileName, contentDiv.innerHTML);
+
+                                // Add click to remove
+                                highlightSpan.addEventListener('click', function (e) {
+                                    e.stopPropagation();
+                                    const parent = this.parentNode;
+                                    while (this.firstChild) {
+                                        parent.insertBefore(this.firstChild, this);
+                                    }
+                                    parent.removeChild(this);
+                                    saveHighlight(fileName, contentDiv.innerHTML);
+                                });
+
+                                selection.removeAllRanges();
+                            } catch (e) {
+                                console.warn('Could not highlight complex selection:', e);
+                                selection.removeAllRanges();
+                            }
+                        }
+                    }
+                });
+            });
+        }
+
+        function saveHighlight(fileName, contentHTML) {
+            if (!highlights[fileName]) {
+                highlights[fileName] = {};
+            }
+
+            // Find which content div this is by checking the card
+            const card = event.target.closest('.file-card');
+            const contentDivs = card.querySelectorAll('.content');
+            contentDivs.forEach((div, index) => {
+                if (div.contains(event.target) || div === event.target) {
+                    highlights[fileName]['content_' + index] = div.innerHTML;
+                }
+            });
+
+            localStorage.setItem('pdfHighlights', JSON.stringify(highlights));
+        }
+
+        function loadHighlights(fileName, contentDiv) {
+            if (!highlights[fileName]) return;
+
+            // Find the index of this content div
+            const card = contentDiv.closest('.file-card');
+            const contentDivs = card.querySelectorAll('.content');
+            const index = Array.from(contentDivs).indexOf(contentDiv);
+
+            const savedHTML = highlights[fileName]['content_' + index];
+            if (savedHTML) {
+                contentDiv.innerHTML = savedHTML;
+
+                // Re-attach click handlers to existing highlights
+                contentDiv.querySelectorAll('.highlight').forEach(span => {
+                    span.addEventListener('click', function (e) {
+                        e.stopPropagation();
+                        const parent = this.parentNode;
+                        while (this.firstChild) {
+                            parent.insertBefore(this.firstChild, this);
+                        }
+                        parent.removeChild(this);
+
+                        // Update saved highlights
+                        if (highlights[fileName]) {
+                            highlights[fileName]['content_' + index] = contentDiv.innerHTML;
+                            localStorage.setItem('pdfHighlights', JSON.stringify(highlights));
+                        }
+                    });
+                });
+            }
+        }
+
+        function clearHighlights(fileName) {
+            if (!confirm('Remove all highlights from this document?')) return;
+
+            delete highlights[fileName];
+            localStorage.setItem('pdfHighlights', JSON.stringify(highlights));
+
+            // Remove highlight spans from the page
+            const card = event.target.closest('.file-card');
+            card.querySelectorAll('.highlight').forEach(span => {
+                const parent = span.parentNode;
+                while (span.firstChild) {
+                    parent.insertBefore(span.firstChild, span);
+                }
+                parent.removeChild(span);
+            });
+        }
+
         function parseAnalysisWithSubtitles(analysis) {
             // Split by common subtitle patterns like "**Title:**", "## Title", "1. Title"
             const lines = analysis.split('\n');
@@ -436,6 +622,11 @@
                         </div>
                         <div class="timestamp">Processed: ${new Date(file.timestamp).toLocaleString()}</div>
                         
+                        <div class="highlight-controls">
+                            <button class="highlight-btn" onclick="toggleHighlighting('${file.name.replace(/'/g, "\\'")}', this)">🖍️ Enable Highlighting</button>
+                            <button class="highlight-btn clear-btn" onclick="clearHighlights('${file.name.replace(/'/g, "\\'")}')" style="background-color: #95a5a6; color: white; border-color: #95a5a6;">🗑️ Clear Highlights</button>
+                        </div>
+                        
                         <div class="collapsible" onclick="toggleCollapsible(this)">AI Analysis</div>
                         <div class="collapsible-content">
                             ${parseAnalysisWithSubtitles(file.analysis)}
@@ -454,6 +645,9 @@
                         unreadContainer.appendChild(card);
                         unreadCount++;
                     }
+
+                    // Setup highlighting for this card
+                    setupHighlighting(file.name, card);
 
                     // Restore expanded state after appending
                     if (expandedState[file.name]) {
