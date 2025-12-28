@@ -255,6 +255,31 @@ app.post('/api/save-to-drive', async (req, res) => {
     }
 });
 
+// Helper to call Gemini with Retry
+async function callGeminiWithRetry(model, prompt, retries = 3, initialDelay = 4000) {
+    let currentDelay = initialDelay;
+
+    for (let i = 0; i < retries; i++) {
+        try {
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            return response.text();
+        } catch (error) {
+            const isRateLimit = error.message.includes('429') || error.status === 429;
+            const isTransient = error.message.includes('503') || error.status === 503;
+
+            if ((isRateLimit || isTransient) && i < retries - 1) {
+                log(`Gemini API Error (Attempt ${i + 1}/${retries}): ${error.message}. Retrying in ${currentDelay}ms...`);
+                await new Promise(resolve => setTimeout(resolve, currentDelay));
+                // Exponential backoff with jitter
+                currentDelay = (currentDelay * 2) + Math.random() * 1000;
+            } else {
+                throw error;
+            }
+        }
+    }
+}
+
 // Function to process PDF
 async function processPDF(filePath) {
     const fileName = path.basename(filePath);
@@ -297,12 +322,12 @@ Analyze the following text from a notebook or document PDF. Provide a comprehens
 **Text Content:**
 ${text.substring(0, 20000)}
 `; // Increased limit for better context
-                const result = await model.generateContent(prompt);
-                const response = await result.response;
-                analysis = response.text();
+
+                analysis = await callGeminiWithRetry(model, prompt);
+
             } catch (aiError) {
                 console.error("AI Error:", aiError);
-                analysis = `Error generating AI analysis: ${aiError.message}`;
+                analysis = `Error generating AI analysis: ${aiError.message}. \n\nYou might be hitting rate limits. Please try to delete this file and upload it again locally later.`;
             }
         } else {
             analysis = "API Key missing. Please add GEMINI_API_KEY to .env file.";
